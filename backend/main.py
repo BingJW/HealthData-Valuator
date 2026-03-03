@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 # 挂载指标测算接口
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="")
 
 @app.get("/")
 async def root():
