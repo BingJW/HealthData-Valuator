@@ -69,6 +69,26 @@ const routes = [
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     redirect: '/'
+  },
+  {
+    path: '/admin/dashboard',
+    name: 'AdminDashboard',
+    component: () => import('@/views/admin/Dashboard.vue'),
+    meta: { 
+      title: '管理员看板',
+      requiresAuth: true,
+      requiresAdmin: true
+    }
+  },
+  {
+    path: '/admin/weights',
+    name: 'WeightSetting',
+    component: () => import('@/views/admin/WeightSetting.vue'),
+    meta: { 
+      title: '权重设置',
+      requiresAuth: true,
+      requiresAdmin: true
+    }
   }
 ]
 

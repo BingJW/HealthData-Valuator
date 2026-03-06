@@ -1,0 +1,89 @@
+/* frontend/src/assets/styles/responsive.css */
+/* 响应式工具类 */
+.responsive-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.responsive-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .mobile-hidden {
+    display: none !important;
+  }
+  
+  .mobile-full-width {
+    width: 100% !important;
+  }
+  
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+  
+  /* 卡片优化 */
+  .el-card {
+    margin: 0.5rem;
+    padding: 0.75rem;
+  }
+  
+  /* 表单优化 */
+  .el-form-item {
+    margin-bottom: 1rem;
+  }
+  
+  .el-form-item__label {
+    font-size: 0.9rem;
+  }
+  
+  /* 按钮组优化 */
+  .el-button-group {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .el-button-group .el-button {
+    margin: 0.25rem 0;
+  }
+  
+  /* 表格优化 */
+  .el-table {
+    font-size: 0.85rem;
+  }
+  
+  .el-table__cell {
+    padding: 0.5rem;
+  }
+}
+
+/* 平板优化 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .tablet-hidden {
+    display: none !important;
+  }
+  
+  .tablet-half-width {
+    width: 50% !important;
+  }
+}
+
+/* 打印优化 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-full-width {
+    width: 100% !important;
+  }
+  
+  .page-break {
+    page-break-after: always;
+  }
+}

@@ -190,6 +190,127 @@ async def create_evaluation(data: dict):
         }
     }
 
+# backend/main.py
+@app.post("/api/demo/init")
+async def init_demo_data():
+    """初始化演示数据"""
+    # 清空现有数据
+    fake_users_db.clear()
+    evaluations_db.clear()
+    
+    # 初始化测试用户
+    demo_users = [
+        {
+            "username": "admin",
+            "password": "admin123",
+            "hospital": "北京协和医院",
+            "phone": "13800138001",
+            "email": "admin@example.com"
+        },
+        {
+            "username": "doctor_zhang",
+            "password": "password123",
+            "hospital": "上海瑞金医院",
+            "phone": "13800138002",
+            "email": "zhang@example.com"
+        },
+        {
+            "username": "nurse_li",
+            "password": "password123",
+            "hospital": "广州中山医院",
+            "phone": "13800138003",
+            "email": "li@example.com"
+        }
+    ]
+    
+    for user in demo_users:
+        fake_users_db[user["username"]] = user
+    
+    # 初始化演示评估数据
+    demo_evaluations = [
+        {
+            "id": "1",
+            "name": "2023年度数据资产评估",
+            "description": "年度全面数据资产评估报告",
+            "total_value": 1250000.00,
+            "indicators": [
+                {"category": 1, "item_name": "strategicPlanning", "amount": 50000},
+                {"category": 1, "item_name": "governanceSystem", "amount": 80000},
+                {"category": 2, "item_name": "hardwareCollection", "amount": 150000},
+                {"category": 3, "item_name": "storageHardware", "amount": 120000},
+                {"category": 4, "item_name": "dataCleaning", "amount": 90000},
+                {"category": 5, "item_name": "businessApplication", "amount": 300000},
+                {"category": 6, "item_name": "dataExchange", "amount": 60000},
+                {"category": 7, "item_name": "securityHardware", "amount": 80000},
+                {"category": 8, "item_name": "archivingSystem", "amount": 40000},
+                {"category": 9, "item_name": "strategyGovernance", "amount": 280000}
+            ],
+            "created_at": "2023-12-15T10:30:00",
+            "status": "completed"
+        },
+        {
+            "id": "2",
+            "name": "急诊科数据专项评估",
+            "description": "急诊科业务数据价值评估",
+            "total_value": 850000.00,
+            "indicators": [
+                {"category": 2, "item_name": "dataPurchase", "amount": 200000},
+                {"category": 3, "item_name": "cloudStorage", "amount": 120000},
+                {"category": 5, "item_name": "analyticsModeling", "amount": 180000},
+                {"category": 7, "item_name": "privacyProtection", "amount": 100000},
+                {"category": 9, "item_name": "technicalOperations", "amount": 250000}
+            ],
+            "created_at": "2023-11-20T14:15:00",
+            "status": "completed"
+        },
+        {
+            "id": "3",
+            "name": "医疗影像数据评估",
+            "description": "PACS系统影像数据价值分析",
+            "total_value": 2100000.00,
+            "indicators": [
+                {"category": 2, "item_name": "hardwareCollection", "amount": 500000},
+                {"category": 3, "item_name": "storageHardware", "amount": 300000},
+                {"category": 3, "item_name": "backupDisaster", "amount": 200000},
+                {"category": 4, "item_name": "dataProcessing", "amount": 400000},
+                {"category": 5, "item_name": "visualization", "amount": 300000},
+                {"category": 9, "item_name": "dataAnalysis", "amount": 400000}
+            ],
+            "created_at": "2023-10-10T09:45:00",
+            "status": "completed"
+        }
+    ]
+    
+    for eval in demo_evaluations:
+        evaluations_db[eval["id"]] = eval
+    
+    return {
+        "code": 0,
+        "message": "演示数据初始化成功",
+        "data": {
+            "users_created": len(demo_users),
+            "evaluations_created": len(demo_evaluations)
+        }
+    }
+
+@app.get("/api/demo/stats")
+async def get_demo_stats():
+    """获取演示统计数据"""
+    total_value = sum(eval["total_value"] for eval in evaluations_db.values())
+    avg_value = total_value / len(evaluations_db) if evaluations_db else 0
+    
+    return {
+        "code": 0,
+        "message": "获取统计数据成功",
+        "data": {
+            "total_evaluations": len(evaluations_db),
+            "total_users": len(fake_users_db),
+            "total_value": total_value,
+            "average_value": avg_value,
+            "last_updated": datetime.now().isoformat()
+        }
+    }
+
 # 如果直接运行此文件
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
