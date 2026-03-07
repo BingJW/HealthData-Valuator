@@ -35,17 +35,72 @@
           <template #header>
             <div class="card-header">
               <h3><el-icon><Clock /></el-icon> 最近评估</h3>
-              <el-button type="primary" text @click="refreshData">
-                <el-icon><Refresh /></el-icon> 刷新
-              </el-button>
+              <div class="header-actions">
+                <!-- 搜索和操作区域 -->
+                <div class="search-actions-row">
+                  <!-- 医院搜索框 -->
+                  <el-input
+                    v-model="hospitalSearch"
+                    placeholder="按医院名称搜索"
+                    clearable
+                    class="search-input"
+                    @input="handleHospitalSearch"
+                    @clear="handleSearchClear"
+                  >
+                    <template #prefix>
+                      <el-icon><Search /></el-icon>
+                    </template>
+                  </el-input>
+                  
+                  <!-- 操作按钮组 -->
+                  <div class="action-buttons">
+                    <!-- 高级筛选 -->
+                    <el-dropdown @command="handleAdvancedFilter" trigger="click">
+                      <el-button>
+                        <el-icon><Filter /></el-icon>
+                        筛选
+                      </el-button>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="all">显示全部</el-dropdown-item>
+                          <el-dropdown-item command="completed" divided>仅显示已完成</el-dropdown-item>
+                          <el-dropdown-item command="processing">仅显示计算中</el-dropdown-item>
+                          <el-dropdown-item command="draft">仅显示草稿</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                    
+                    <!-- 刷新按钮 -->
+                    <el-button type="primary" @click="refreshData">
+                      <el-icon><Refresh /></el-icon> 刷新
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 搜索统计 -->
+            <div v-if="showSearchInfo" class="search-info">
+              <el-tag type="info" size="small" class="mr-2">
+                共找到 {{ filteredEvaluations.length }} 条记录
+              </el-tag>
+              <el-tag v-if="hospitalSearch" type="primary" size="small" closable @close="clearHospitalSearch">
+                医院: {{ hospitalSearch }}
+              </el-tag>
+              <el-tag v-if="currentStatusFilter !== 'all'" :type="getStatusType(currentStatusFilter)" size="small" closable @close="clearStatusFilter">
+                状态: {{ getStatusText(currentStatusFilter) }}
+              </el-tag>
             </div>
           </template>
           
+          <!-- 评估表格 -->
           <el-table 
-            :data="recentEvaluations" 
+            :data="paginatedEvaluations" 
             stripe
             style="width: 100%"
             v-loading="loading.evaluations"
+            :default-sort="{ prop: 'createdAt', order: 'descending' }"
+            @sort-change="handleSortChange"
           >
             <el-table-column prop="id" label="ID" width="80" />
             <el-table-column prop="name" label="评估名称" width="200">
@@ -55,36 +110,88 @@
                 </router-link>
               </template>
             </el-table-column>
-            <el-table-column prop="hospital" label="医院" width="150" />
-            <el-table-column prop="totalValue" label="总估值" width="120">
+            <el-table-column prop="hospital" label="医院" width="150">
+              <template #header>
+                <div class="column-header">
+                  <span>医院</span>
+                  <el-icon v-if="hospitalSearch" color="#409EFF" style="margin-left: 4px;">
+                    <Search />
+                  </el-icon>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="totalValue" label="总估值" width="120" sortable>
               <template #default="{ row }">
                 {{ formatCurrency(row.totalValue) }}
               </template>
             </el-table-column>
-            <el-table-column prop="createdAt" label="创建时间" width="180">
+            <el-table-column prop="createdAt" label="创建时间" width="180" sortable>
               <template #default="{ row }">
-                {{ formatDate(row.createdAt) }}
+                {{ formatDateTime(row.createdAt) }}
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="100">
+            <el-table-column prop="status" label="状态" width="100" sortable>
               <template #default="{ row }">
                 <el-tag :type="getStatusType(row.status)" size="small">
                   {{ getStatusText(row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100">
+            <el-table-column label="操作" width="120">
               <template #default="{ row }">
-                <el-button 
-                  type="text" 
-                  size="small"
-                  @click="viewEvaluation(row.id)"
-                >
-                  查看
-                </el-button>
+                <el-button-group>
+                  <el-button 
+                    type="primary" 
+                    text
+                    size="small"
+                    @click="viewEvaluation(row.id)"
+                  >
+                    查看
+                  </el-button>
+                  <el-button 
+                    type="danger" 
+                    text
+                    size="small"
+                    @click="deleteEvaluation(row.id)"
+                    v-if="row.status === 'draft'"
+                  >
+                    删除
+                  </el-button>
+                </el-button-group>
               </template>
             </el-table-column>
           </el-table>
+          
+          <!-- 分页 -->
+          <div class="pagination-container" v-if="filteredEvaluations.length > 0">
+            <el-pagination
+              v-model:current-page="currentPage"
+              v-model:page-size="pageSize"
+              :page-sizes="[5, 10, 20, 50]"
+              :total="filteredEvaluations.length"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleSizeChange"
+              @current-change="handleCurrentChange"
+            />
+          </div>
+          
+          <!-- 空状态 -->
+          <div v-if="filteredEvaluations.length === 0" class="empty-state">
+            <el-empty description="未找到匹配的评估记录">
+              <template #image>
+                <el-icon :size="60" color="#909399">
+                  <Search />
+                </el-icon>
+              </template>
+              <p v-if="hospitalSearch">没有找到医院名称包含 "{{ hospitalSearch }}" 的评估记录</p>
+              <p v-else-if="currentStatusFilter !== 'all'">没有找到状态为 "{{ getStatusText(currentStatusFilter) }}" 的评估记录</p>
+              <p v-else>暂无评估数据</p>
+              <div class="empty-actions">
+                <el-button @click="clearAllFilters">清除所有筛选条件</el-button>
+                <el-button type="primary" @click="refreshData">刷新数据</el-button>
+              </div>
+            </el-empty>
+          </div>
         </el-card>
 
         <!-- 成本类别分布 -->
@@ -228,7 +335,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { 
   Monitor, 
@@ -245,11 +352,20 @@ import {
   Bell,
   MagicStick,
   DataAnalysis,
-  TrendCharts
+  TrendCharts,
+  Search,
+  Filter
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
+
+// 搜索相关状态
+const hospitalSearch = ref('')
+const currentStatusFilter = ref('all')
+const currentSort = ref({ prop: 'createdAt', order: 'descending' })
+const currentPage = ref(1)
+const pageSize = ref(5)
 
 // 加载状态
 const loading = reactive({
@@ -289,8 +405,8 @@ const overviewCards = ref([
   }
 ])
 
-// 最近评估数据
-const recentEvaluations = ref([
+// 所有评估数据
+const allEvaluations = ref([
   {
     id: '1',
     name: '2023年度数据资产评估',
@@ -329,6 +445,46 @@ const recentEvaluations = ref([
     hospital: '上海华山医院',
     totalValue: 670000,
     createdAt: '2024-02-15T16:45:00',
+    status: 'completed'
+  },
+  {
+    id: '6',
+    name: '住院部数据质量评估',
+    hospital: '北京协和医院',
+    totalValue: 320000,
+    createdAt: '2024-01-20T09:30:00',
+    status: 'completed'
+  },
+  {
+    id: '7',
+    name: '临床研究数据资产评估',
+    hospital: '上海瑞金医院',
+    totalValue: 540000,
+    createdAt: '2024-01-15T14:20:00',
+    status: 'completed'
+  },
+  {
+    id: '8',
+    name: '医院运营数据分析评估',
+    hospital: '广州中山医院',
+    totalValue: 890000,
+    createdAt: '2023-12-28T16:00:00',
+    status: 'completed'
+  },
+  {
+    id: '9',
+    name: '药品管理数据价值评估',
+    hospital: '北京协和医院',
+    totalValue: 410000,
+    createdAt: '2023-12-10T10:15:00',
+    status: 'draft'
+  },
+  {
+    id: '10',
+    name: '医疗设备数据价值评估',
+    hospital: '上海华山医院',
+    totalValue: 720000,
+    createdAt: '2023-11-25T15:30:00',
     status: 'completed'
   }
 ])
@@ -381,6 +537,60 @@ const systemNotices = ref([
   }
 ])
 
+// 计算属性
+// 过滤后的评估数据
+const filteredEvaluations = computed(() => {
+  let filtered = [...allEvaluations.value]
+  
+  // 按医院名称搜索
+  if (hospitalSearch.value) {
+    const searchTerm = hospitalSearch.value.toLowerCase()
+    filtered = filtered.filter(item => 
+      item.hospital.toLowerCase().includes(searchTerm)
+    )
+  }
+  
+  // 按状态筛选
+  if (currentStatusFilter.value !== 'all') {
+    filtered = filtered.filter(item => item.status === currentStatusFilter.value)
+  }
+  
+  // 排序
+  if (currentSort.value.prop) {
+    const prop = currentSort.value.prop
+    const order = currentSort.value.order
+    
+    filtered.sort((a, b) => {
+      let aVal = a[prop]
+      let bVal = b[prop]
+      
+      // 处理特殊字段
+      if (prop === 'createdAt') {
+        aVal = new Date(aVal).getTime()
+        bVal = new Date(bVal).getTime()
+      }
+      
+      if (aVal < bVal) return order === 'ascending' ? -1 : 1
+      if (aVal > bVal) return order === 'ascending' ? 1 : -1
+      return 0
+    })
+  }
+  
+  return filtered
+})
+
+// 分页后的数据
+const paginatedEvaluations = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredEvaluations.value.slice(start, end)
+})
+
+// 是否显示搜索信息
+const showSearchInfo = computed(() => {
+  return hospitalSearch.value || currentStatusFilter.value !== 'all'
+})
+
 // 格式化货币
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('zh-CN', {
@@ -391,8 +601,8 @@ const formatCurrency = (value) => {
   }).format(value || 0)
 }
 
-// 格式化日期
-const formatDate = (dateString) => {
+// 格式化日期时间
+const formatDateTime = (dateString) => {
   if (!dateString) return '未知日期'
   const date = new Date(dateString)
   return date.toLocaleString('zh-CN', {
@@ -400,8 +610,9 @@ const formatDate = (dateString) => {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit'
-  })
+    minute: '2-digit',
+    hour12: false
+  }).replace(/\//g, '/')
 }
 
 // 获取状态类型
@@ -431,6 +642,32 @@ const viewEvaluation = (id) => {
   router.push(`/result/${id}`)
 }
 
+// 删除评估
+const deleteEvaluation = async (id) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这条评估记录吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+    
+    const index = allEvaluations.value.findIndex(item => item.id === id)
+    if (index !== -1) {
+      allEvaluations.value.splice(index, 1)
+      ElMessage.success('评估记录已删除')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败: ' + error.message)
+    }
+  }
+}
+
 // 刷新数据
 const refreshData = async () => {
   loading.evaluations = true
@@ -443,6 +680,57 @@ const refreshData = async () => {
   } finally {
     loading.evaluations = false
   }
+}
+
+// 处理医院搜索
+const handleHospitalSearch = () => {
+  currentPage.value = 1 // 重置到第一页
+}
+
+// 清除医院搜索
+const clearHospitalSearch = () => {
+  hospitalSearch.value = ''
+  currentPage.value = 1
+}
+
+// 处理高级筛选
+const handleAdvancedFilter = (command) => {
+  currentStatusFilter.value = command
+  currentPage.value = 1
+}
+
+// 清除状态筛选
+const clearStatusFilter = () => {
+  currentStatusFilter.value = 'all'
+  currentPage.value = 1
+}
+
+// 清除所有筛选条件
+const clearAllFilters = () => {
+  hospitalSearch.value = ''
+  currentStatusFilter.value = 'all'
+  currentPage.value = 1
+}
+
+// 处理排序变化
+const handleSortChange = ({ prop, order }) => {
+  currentSort.value = { prop, order }
+}
+
+// 处理分页大小变化
+const handleSizeChange = (val) => {
+  pageSize.value = val
+  currentPage.value = 1
+}
+
+// 处理当前页变化
+const handleCurrentChange = (val) => {
+  currentPage.value = val
+}
+
+// 处理搜索清空
+const handleSearchClear = () => {
+  currentPage.value = 1
 }
 
 // 跳转到权重设置
@@ -619,6 +907,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 0;
+  margin-bottom: 16px;
 }
 
 .card-header h3 {
@@ -628,6 +917,49 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 搜索和操作行 */
+.search-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 300px;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* 搜索信息 */
+.search-info {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mr-2 {
+  margin-right: 8px;
+}
+
+/* 表头样式 */
+.column-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 评估链接 */
@@ -640,6 +972,28 @@ onMounted(() => {
 .evaluation-link:hover {
   color: #3375b9;
   text-decoration: underline;
+}
+
+/* 分页容器 */
+.pagination-container {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: center;
+}
+
+/* 空状态 */
+.empty-state {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.empty-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* 成本分布 */
@@ -838,8 +1192,17 @@ onMounted(() => {
     gap: 10px;
   }
   
-  .card-header .el-button {
-    align-self: flex-end;
+  .search-actions-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-input {
+    max-width: 100%;
+  }
+  
+  .action-buttons {
+    justify-content: flex-start;
   }
 }
 </style>
