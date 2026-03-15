@@ -95,11 +95,11 @@
         
         <div class="form-footer">
           <span>已有账号？</span>
-          <el-button type="text" @click="$router.push('/login')">立即登录</el-button>
+          <el-button link type="primary" @click="$router.push('/login')">立即登录</el-button>
         </div>
         
         <div class="form-footer">
-          <el-button type="text" @click="$router.push('/')">返回首页</el-button>
+          <el-button link @click="$router.push('/')">返回首页</el-button>
         </div>
       </el-form>
     </el-card>
@@ -176,8 +176,8 @@ const validateEmail = (rule, value, callback) => {
 const registerRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度为3-20个字符', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_]+$/, message: '用户名只能包含字母、数字和下划线', trigger: 'blur' }
+    { min: 2, max: 20, message: '用户名长度为2-20个字符', trigger: 'blur' },
+    { pattern: /^[\u4e00-\u9fa5a-zA-Z0-9_\s]+$/, message: '用户名可包含中文、字母、数字、下划线和空格', trigger: 'blur' }
   ],
   password: [
     { required: true, validator: validatePassword, trigger: 'blur' }
@@ -219,16 +219,6 @@ const handleRegister = async () => {
   } finally {
     loading.value = false
   }
-}
-
-// 自动填充测试数据（开发环境用）
-if (process.env.NODE_ENV === 'development') {
-  registerForm.username = 'testuser'
-  registerForm.password = 'password123'
-  registerForm.confirmPassword = 'password123'
-  registerForm.hospital = '北京协和医院'
-  registerForm.phone = '13800138000'
-  registerForm.email = 'test@example.com'
 }
 </script>
 

@@ -39,12 +39,14 @@ const routes = [
   },
   {
     path: '/personal-center',
-    name: 'PersonalCenter',
     component: PersonalCenter,
-    meta: { 
-      title: '个人中心',
-      requiresAuth: true 
-    }
+    meta: { title: '个人中心', requiresAuth: true },
+    children: [
+      { path: '', name: 'PersonalCenterDashboard', component: () => import('../views/PersonalCenterDashboard.vue') },
+      { path: 'evaluations', name: 'PersonalCenterEvaluations', component: () => import('../views/PersonalCenterEvaluations.vue') },
+      { path: 'drafts', name: 'PersonalCenterDrafts', component: () => import('../views/PersonalCenterDrafts.vue') },
+      { path: 'profile', name: 'PersonalCenterProfile', component: () => import('../views/PersonalCenterProfile.vue') }
+    ]
   },
   {
     path: '/data-input',
@@ -66,29 +68,41 @@ const routes = [
     props: true
   },
   {
+    path: '/admin',
+    component: () => import('@/views/admin/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+    redirect: '/admin/dashboard',
+    children: [
+      {
+        path: 'dashboard',
+        name: 'AdminDashboard',
+        component: () => import('@/views/admin/Dashboard.vue'),
+        meta: { title: '管理员概览', requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: 'evaluations',
+        name: 'AdminEvaluations',
+        component: () => import('@/views/admin/AdminEvaluations.vue'),
+        meta: { title: '评估管理', requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/views/admin/AdminUsers.vue'),
+        meta: { title: '用户管理', requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: 'weights',
+        name: 'WeightSetting',
+        component: () => import('@/views/admin/WeightSetting.vue'),
+        meta: { title: '权重设置', requiresAuth: true, requiresAdmin: true }
+      }
+    ]
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     redirect: '/'
-  },
-  {
-    path: '/admin/dashboard',
-    name: 'AdminDashboard',
-    component: () => import('@/views/admin/Dashboard.vue'),
-    meta: { 
-      title: '管理员看板',
-      requiresAuth: true,
-      requiresAdmin: true
-    }
-  },
-  {
-    path: '/admin/weights',
-    name: 'WeightSetting',
-    component: () => import('@/views/admin/WeightSetting.vue'),
-    meta: { 
-      title: '权重设置',
-      requiresAuth: true,
-      requiresAdmin: true
-    }
   }
 ]
 
@@ -115,6 +129,12 @@ router.beforeEach((to, from, next) => {
 
   // 已登录但访问登录/注册页
   if (to.meta.requiresGuest && isAuthenticated) {
+    next('/personal-center')
+    return
+  }
+
+  // 需要管理员权限（约定：用户名为 admin 视为管理员）
+  if (to.meta.requiresAdmin && (!isAuthenticated || localStorage.getItem('isAdmin') !== 'true')) {
     next('/personal-center')
     return
   }

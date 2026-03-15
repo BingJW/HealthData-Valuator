@@ -4,8 +4,11 @@
     <el-card class="header-card">
       <template #header>
         <div class="header-content">
-          <h2>权重设置</h2>
-          <p>调整9大类成本指标的权重系数，影响总估值计算</p>
+          <div>
+            <h2>权重设置</h2>
+            <p>调整9大类成本指标的权重系数，影响总估值计算</p>
+          </div>
+          <el-button type="primary" plain @click="$router.push('/admin/dashboard')">返回概览</el-button>
         </div>
       </template>
       
@@ -147,6 +150,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useAdminStore } from '@/store/admin'
 import { Refresh, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useResponsive } from '@/utils/responsive'
 import BaseChart from '@/components/charts/BaseChart.vue'
 
 const adminStore = useAdminStore()
@@ -415,6 +419,14 @@ watch(width, () => {
 
 .header-card {
   margin-bottom: 20px;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .header-content h2 {

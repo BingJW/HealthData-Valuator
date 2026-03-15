@@ -55,11 +55,11 @@
         
         <div class="form-footer">
           <span>还没有账号？</span>
-          <el-button type="text" @click="$router.push('/register')">立即注册</el-button>
+          <el-button link type="primary" @click="$router.push('/register')">立即注册</el-button>
         </div>
-        
+        <p class="login-tip">管理员账号：admin / admin123（首次打开登录页时已自动初始化）</p>
         <div class="form-footer">
-          <el-button type="text" @click="$router.push('/')">返回首页</el-button>
+          <el-button link @click="$router.push('/')">返回首页</el-button>
         </div>
       </el-form>
     </el-card>
@@ -67,11 +67,12 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '../store/user'
 import { ElMessage } from 'element-plus'
+import { initDemoDataAPI } from '@/api/demo'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -95,6 +96,14 @@ const loginRules = {
 
 const loading = ref(false)
 
+onMounted(async () => {
+  try {
+    await initDemoDataAPI()
+  } catch {
+    // 忽略（可能已初始化或后端未启动）
+  }
+})
+
 const handleLogin = async () => {
   // 表单验证
   if (!loginFormRef.value) return
@@ -107,8 +116,11 @@ const handleLogin = async () => {
       username: loginForm.username,
       password: loginForm.password
     })
+    const redirect = router.currentRoute.value.query.redirect || (userStore.isAdmin ? '/admin' : '/personal-center')
+    router.push(redirect)
   } catch (error) {
-    console.error('登录失败:', error)
+    const msg = error.response?.data?.detail || error.response?.data?.message || '用户名或密码错误'
+    ElMessage.error(typeof msg === 'string' ? msg : '登录失败，请检查用户名和密码')
   } finally {
     loading.value = false
   }
@@ -172,5 +184,12 @@ if (process.env.NODE_ENV === 'development') {
 
 .form-footer .el-button {
   margin-left: 5px;
+}
+
+.login-tip {
+  margin: 12px 0 0 0;
+  font-size: 12px;
+  color: #909399;
+  text-align: center;
 }
 </style>

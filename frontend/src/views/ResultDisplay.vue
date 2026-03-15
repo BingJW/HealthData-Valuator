@@ -2,7 +2,7 @@
 <template>
   <div class="result-container" v-loading="loading">
     <!-- 主报告卡片 -->
-    <el-card class="result-card" v-if="!loading && evaluationResult">
+    <el-card ref="reportCardRef" class="result-card" v-if="!loading && evaluationResult">
       <!-- 报告头部 -->
       <div class="report-header">
         <div class="header-left">
@@ -89,7 +89,7 @@
                   <span class="detail-value">{{ formatCurrency(detail.amount) }}</span>
                 </div>
                 <div v-if="category.details.length > 3" class="more-details">
-                  <el-button type="text" size="small" @click.stop="showCategoryDetails(category)">
+                  <el-button link size="small" @click.stop="showCategoryDetails(category)">
                     查看更多 {{ category.details.length - 3 }} 项
                   </el-button>
                 </div>
@@ -171,7 +171,7 @@
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <el-button 
-                type="text" 
+                link 
                 size="small" 
                 @click.stop="viewItemDetail(row)"
               >
@@ -380,30 +380,16 @@
       </template>
     </el-dialog>
 
-    <!-- 分享对话框 -->
+    <!-- 分享对话框：仅复制链接 -->
     <el-dialog
       v-model="showShareDialog"
       title="分享评估报告"
       width="400px"
     >
-      <div class="share-options">
-        <div class="share-option" @click="copyShareLink">
-          <el-icon :size="30"><Link /></el-icon>
-          <span>复制链接</span>
-        </div>
-        <div class="share-option" @click="generateQRCode">
-          <el-icon :size="30"><Picture /></el-icon>
-          <span>生成二维码</span>
-        </div>
-        <div class="share-option" @click="exportAsImage">
-          <el-icon :size="30"><Camera /></el-icon>
-          <span>导出图片</span>
-        </div>
-      </div>
       <div class="share-link" v-if="shareLink">
         <el-input v-model="shareLink" readonly>
           <template #append>
-            <el-button :icon="CopyDocument" @click="copyToClipboard(shareLink)"></el-button>
+            <el-button :icon="CopyDocument" @click="copyToClipboard(shareLink)">复制链接</el-button>
           </template>
         </el-input>
       </div>
@@ -436,9 +422,6 @@ import {
   Warning,
   ChatLineRound,
   Document,
-  Picture,
-  Camera,
-  Link,
   Files,
   PieChart
 } from '@element-plus/icons-vue'
@@ -673,27 +656,59 @@ const showCategoryDetails = (category) => {
   showCategoryDialog.value = true
 }
 
-// 打印报告
+// 打印报告（浏览器打印，可另存为 PDF）
 const printReport = () => {
-  ElMessage.info('打印功能开发中...')
-  // window.print() // 实际开发中可以使用浏览器的打印功能
+  window.print()
 }
 
-// 导出PDF
+// 导出 PDF：打开打印对话框，用户选择“另存为 PDF”
 const exportPDF = () => {
-  ElMessage.info('PDF导出功能开发中...')
-  // 实际开发中可以集成html2pdf或jspdf
+  ElMessage.info('请在弹出的打印窗口中选择“另存为 PDF”或目标打印机')
+  window.print()
 }
 
 // 分享报告
 const shareReport = () => {
-  shareLink.value = `${window.location.origin}/result/${route.params.id}`
+  shareLink.value = window.location.href
   showShareDialog.value = true
 }
 
-// 导出到Excel
+// 导出到 Excel（CSV，UTF-8 带 BOM，Excel 可直接打开）
 const exportToExcel = () => {
-  ElMessage.info('Excel导出功能开发中...')
+  const r = evaluationResult.value
+  if (!r) {
+    ElMessage.warning('暂无数据可导出')
+    return
+  }
+  const rows = []
+  rows.push(['医疗数据资产价值评估报告'])
+  rows.push(['报告编号', r.reportId || ''])
+  rows.push(['评估名称', r.name || ''])
+  rows.push(['医院', r.hospital || ''])
+  rows.push(['评估时间', r.createdAt ? new Date(r.createdAt).toLocaleString('zh-CN') : ''])
+  rows.push(['总估值（元）', r.totalValue ?? ''])
+  rows.push([])
+  rows.push(['成本类别汇总'])
+  rows.push(['序号', '类别名称', '金额（元）', '占比(%)'])
+  ;(r.categories || []).forEach((c, i) => {
+    rows.push([i + 1, c.name, c.value ?? '', (r.totalValue ? ((c.value / r.totalValue) * 100).toFixed(2) : '')])
+  })
+  rows.push([])
+  rows.push(['详细成本明细'])
+  rows.push(['序号', '成本类别', '成本项目', '金额（元）', '占比(%)'])
+  ;(r.details || []).forEach((d, i) => {
+    rows.push([i + 1, d.categoryName, d.itemName, d.amount ?? '', (d.percentage ?? '').toString()])
+  })
+  const BOM = '\uFEFF'
+  const csv = BOM + rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `评估报告_${(r.name || r.reportId || 'export').replace(/[/\\?*:]/g, '_')}_${Date.now()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('已导出为 CSV，可用 Excel 打开')
 }
 
 // 复制表格数据
@@ -720,19 +735,36 @@ const copyTableData = () => {
     .catch(() => ElMessage.error('复制失败'))
 }
 
-// 复制分享链接
-const copyShareLink = () => {
-  shareLink.value = `${window.location.origin}/result/${route.params.id}`
-}
-
-// 生成二维码
-const generateQRCode = () => {
-  ElMessage.info('二维码生成功能开发中...')
-}
-
-// 导出为图片
-const exportAsImage = () => {
-  ElMessage.info('图片导出功能开发中...')
+// 导出为图片（报告区域截图）
+const exportAsImage = async () => {
+  const r = evaluationResult.value
+  if (!r) {
+    ElMessage.warning('暂无报告可导出')
+    return
+  }
+  try {
+    const html2canvas = (await import('html2canvas')).default
+    const card = document.querySelector('.result-card')
+    if (!card) {
+      ElMessage.error('未找到报告区域')
+      return
+    }
+    ElMessage.info('正在生成图片...')
+    const canvas = await html2canvas(card, {
+      useCORS: true,
+      scale: 2,
+      logging: false,
+      backgroundColor: '#ffffff'
+    })
+    const link = document.createElement('a')
+    link.download = `评估报告_${(r.name || r.reportId || 'export').replace(/[/\\?*:]/g, '_')}_${Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+    ElMessage.success('图片已下载')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('图片导出失败: ' + (e?.message || '未知错误'))
+  }
 }
 
 // 复制到剪贴板
@@ -1229,38 +1261,8 @@ onUnmounted(() => {
 }
 
 /* 分享对话框样式 */
-.share-options {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-.share-option {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 20px;
-  border: 1px solid #e6e6e6;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.share-option:hover {
-  background-color: #f5f7fa;
-  border-color: #409EFF;
-  transform: translateY(-2px);
-}
-
-.share-option span {
-  font-size: 14px;
-  color: #333;
-}
-
 .share-link {
-  margin-top: 20px;
+  margin: 0;
 }
 
 /* 项目详情对话框样式 */
@@ -1331,9 +1333,32 @@ onUnmounted(() => {
     width: 100%;
     justify-content: flex-start;
   }
-  
-  .share-options {
-    grid-template-columns: 1fr;
+}
+
+/* 打印样式：隐藏无关元素，仅打印报告卡片 */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .result-container,
+  .result-container *,
+  .result-card,
+  .result-card * {
+    visibility: visible;
+  }
+  .result-container {
+    padding: 0;
+    background: #fff;
+  }
+  .result-card {
+    max-width: 100%;
+    box-shadow: none;
+    border: none;
+  }
+  .primary-actions,
+  .secondary-actions,
+  .table-actions {
+    display: none !important;
   }
 }
 </style>

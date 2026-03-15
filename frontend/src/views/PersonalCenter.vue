@@ -16,6 +16,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">个人资料</el-dropdown-item>
+                <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided>管理员看板</el-dropdown-item>
                 <el-dropdown-item command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -29,6 +30,7 @@
       <el-aside class="sidebar" width="250px">
         <el-menu
           :default-active="activeMenu"
+          :default-openeds="subMenuOpeneds"
           class="sidebar-menu"
           @select="handleMenuSelect"
         >
@@ -97,14 +99,30 @@ const activeMenu = computed(() => {
   const path = route.path
   if (path.includes('/data-input')) return 'new-evaluation'
   if (path.includes('/result/')) return 'evaluation-list'
-  if (path.includes('/profile')) return 'profile'
+  if (path.includes('/personal-center/evaluations')) return 'evaluation-list'
+  if (path.includes('/personal-center/drafts')) return 'evaluation-drafts'
+  if (path.includes('/personal-center/profile')) return 'profile'
   return 'dashboard'
 })
 
+// 在评估列表或草稿箱时展开「我的评估」子菜单
+const subMenuOpeneds = computed(() => {
+  const path = route.path
+  if (path.includes('/personal-center/evaluations') || path.includes('/personal-center/drafts')) {
+    return ['evaluations']
+  }
+  return []
+})
+
 onMounted(async () => {
-  // 如果没有用户信息，尝试获取
-  if (!userInfo.value.username) {
-    await userStore.getUserInfo()
+  if (!userInfo.value.username && userStore.token) {
+    try {
+      await userStore.getUserInfo()
+    } catch (e) {
+      if (e.response?.status === 401) {
+        router.push('/login')
+      }
+    }
   }
 })
 
@@ -119,6 +137,9 @@ const handleMenuSelect = (index) => {
     case 'evaluation-list':
       router.push('/personal-center/evaluations')
       break
+    case 'evaluation-drafts':
+      router.push('/personal-center/drafts')
+      break
     case 'profile':
       router.push('/personal-center/profile')
       break
@@ -132,6 +153,9 @@ const handleCommand = async (command) => {
   switch (command) {
     case 'profile':
       router.push('/personal-center/profile')
+      break
+    case 'admin':
+      router.push('/admin/dashboard')
       break
     case 'logout':
       try {

@@ -1,4 +1,4 @@
-﻿// frontend/src/store/user.js
+// frontend/src/store/user.js
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { 
@@ -16,6 +16,7 @@ export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('token') || '')
   const userInfo = ref({})
   const isAuthenticated = computed(() => !!token.value)
+  const isAdmin = computed(() => userInfo.value?.username === 'admin' || localStorage.getItem('isAdmin') === 'true')
 
   // 设置token
   const setToken = (newToken) => {
@@ -28,15 +29,20 @@ export const useUserStore = defineStore('user', () => {
     token.value = ''
     userInfo.value = {}
     localStorage.removeItem('token')
+    localStorage.removeItem('isAdmin')
   }
 
   // 登录
   const login = async (formData) => {
     try {
       const res = await loginAPI(formData)
-      if (res.data && res.data.token) {
+      // 后端返回结构：{ code, data: { token, user_info } }
+      if (res.code === 0 && res.data && res.data.token) {
         setToken(res.data.token)
-        await getUserInfo()
+        userInfo.value = res.data.user_info || {}
+        const isAdminUser = (res.data.user_info?.username === 'admin')
+        if (isAdminUser) localStorage.setItem('isAdmin', 'true')
+        else localStorage.removeItem('isAdmin')
         ElMessage.success('登录成功')
         return res
       }
@@ -114,10 +120,10 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    // 状态
     token,
     userInfo,
     isAuthenticated,
+    isAdmin,
     
     // 方法
     setToken,

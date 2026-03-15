@@ -8,9 +8,9 @@
           <h1>医疗数据资产价值计量器</h1>
         </div>
         <div class="nav-links">
-          <el-button type="text" @click="scrollTo('features')">产品亮点</el-button>
-          <el-button type="text" @click="scrollTo('team')">团队简介</el-button>
-          <el-button type="text" @click="scrollTo('contact')">联系我们</el-button>
+          <el-button link @click="scrollTo('features')">产品亮点</el-button>
+          <el-button link @click="scrollTo('team')">团队简介</el-button>
+          <el-button link @click="scrollTo('contact')">联系我们</el-button>
         </div>
         <div class="auth-buttons">
           <el-button @click="$router.push('/login')">登录</el-button>

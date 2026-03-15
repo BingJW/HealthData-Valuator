@@ -8,9 +8,9 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    password = Column(String)
-    hospital = Column(String, nullable=True)
+    username = Column(String(50), unique=True, index=True)
+    password = Column(String(255))
+    hospital = Column(String(200), nullable=True)
 
     # 关联用户的评估测算记录
     evaluations = relationship("Evaluation", back_populates="owner")
@@ -21,9 +21,9 @@ class Evaluation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    evaluation_name = Column(String, index=True) 
+    evaluation_name = Column(String(200), index=True) 
     total_value = Column(Float)
-    status = Column(String, default="pending")
+    status = Column(String(50), default="pending")
     created_at = Column(DateTime, default=func.now())
 
     owner = relationship("User", back_populates="evaluations")
@@ -37,7 +37,7 @@ class IndicatorData(Base):
     id = Column(Integer, primary_key=True, index=True)
     evaluation_id = Column(Integer, ForeignKey("evaluations.id"))
     category = Column(Integer)  # 指标分类代号 (1-9)
-    item_name = Column(String)   # 指标具体子项名称
+    item_name = Column(String(200))   # 指标具体子项名称
     amount = Column(Float)       # 评估金额
 
     evaluation = relationship("Evaluation", back_populates="indicators")

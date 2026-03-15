@@ -851,16 +851,13 @@ const isFormValid = computed(() => {
          calculateTotal() > 0
 })
 
-// 保存草稿
+// 保存草稿（仅存本地）
 const saveAsDraft = async () => {
   savingDraft.value = true
   try {
-    // 保存到localStorage
-    localStorage.setItem('evaluationDraft', JSON.stringify(formData))
-    
-    // 模拟API调用延迟
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
+    const toSave = { ...formData, __savedAt: Date.now() }
+    localStorage.setItem('evaluationDraft', JSON.stringify(toSave))
+    await new Promise(resolve => setTimeout(resolve, 300))
     ElMessage.success('草稿保存成功')
   } catch (error) {
     ElMessage.error('保存草稿失败')
