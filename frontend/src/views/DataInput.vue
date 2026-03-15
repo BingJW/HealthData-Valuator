@@ -915,7 +915,8 @@ const submitForm = async () => {
       router.push(`/result/${response.data.id}`)
     }
   } catch (error) {
-    ElMessage.error('提交失败：' + (error.response?.data?.message || '网络错误'))
+    const msg = error.response?.data?.detail || error.response?.data?.message || '网络错误'
+    ElMessage.error('提交失败：' + (typeof msg === 'string' ? msg : '网络错误'))
   } finally {
     submitting.value = false
   }

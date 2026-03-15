@@ -126,11 +126,6 @@ const handleLogin = async () => {
   }
 }
 
-// 自动填充测试数据（开发环境用）
-if (process.env.NODE_ENV === 'development') {
-  loginForm.username = 'testuser'
-  loginForm.password = 'password123'
-}
 </script>
 
 <style scoped>
