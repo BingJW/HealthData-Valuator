@@ -139,7 +139,35 @@
 * Node.js 16+
 * npm 或 yarn
 
-### 安装步骤
+### 推荐：一键启动（单终端）
+
+在项目**根目录**执行（只需开一个终端）：
+
+```bash
+# 首次：安装根目录工具 + 前端依赖（后端依赖见下一步）
+npm install
+npm run install:all
+
+# 首次：生成 backend/.env（从模板复制，不会覆盖已有文件）
+npm run init-env
+# 然后编辑 backend/.env，填写 DB_PASSWORD 等 MySQL 配置
+
+# 首次：安装 Python 依赖（建议在 backend 下使用虚拟环境）
+cd backend
+pip install -r requirements.txt
+cd ..
+
+# 每次开发：同时启动后端(8000) + 前端(3000)，按 Ctrl+C 可一并结束
+npm run dev
+```
+
+访问：**http://localhost:3000**（前端通过代理访问 `/api`，无需再单独开终端）。
+
+> **说明**：`npm run dev` 依赖本机已安装 `python` 且能在命令行执行（Windows 可装 Python 并勾选「Add to PATH」）。若 `python` 不可用，可尝试将根目录 `package.json` 里 `dev:api` 中的 `python` 改为 `py`。
+
+---
+
+### 安装步骤（分步 / 与上文等价）
 
 ```bash
 # 1. 克隆项目
@@ -153,7 +181,7 @@ mysql -u root -p
 CREATE DATABASE healthdata_valuator CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 EXIT;
 
-# 2.3 配置环境变量
+# 2.3 配置环境变量（也可用根目录 npm run init-env 自动生成）
 cd backend
 # 复制环境变量示例文件为 .env（必须在 backend 目录下执行，任选一种）
 cp .env.example .env                    # Linux / macOS / Git Bash
@@ -169,12 +197,12 @@ cp .env.example .env                    # Linux / macOS / Git Bash
 # 3. 后端启动
 pip install -r requirements.txt
 # 数据库表会自动创建（通过 SQLAlchemy）
-uvicorn main:app --reload
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 # 后端 API 默认运行在 http://localhost:8000
 # API 文档访问地址: http://localhost:8000/docs
 
-# 4. 前端启动（新开一个终端）
+# 4. 前端启动（新开一个终端；若已用根目录 npm run dev 则无需此步）
 cd frontend
 npm install
 npm run dev
@@ -191,10 +219,11 @@ npm run dev
 
 ### 前后端联调说明
 
-1. **先启动后端**：在 `backend` 目录执行 `uvicorn main:app --reload`（或 `python main.py`），确保运行在 **8000** 端口。
-2. **再启动前端**：在 `frontend` 目录执行 `npm run dev`，前端运行在 **3000** 端口。
-3. **代理**：`vite.config.js` 已将 `/api` 代理到 `http://localhost:8000`，前端请求 `axios.get('/api/xxx')` 会转发到 `http://localhost:8000/api/xxx`。
-4. **若出现 404**：检查后端是否已启动、端口是否为 8000；检查请求路径是否与后端路由一致（如 `/api/user/info`、`/api/evaluations` 等）。
+1. **启动方式**：推荐在项目根目录执行 **`npm run dev`**（同时起后端与前端）；或分两个终端分别启动后端、前端。
+2. **后端**：需运行在 **8000** 端口（`python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000`）。
+3. **前端**：运行在 **3000** 端口（`cd frontend && npm run dev`）。
+4. **代理**：`vite.config.js` 已将 `/api` 代理到 `http://localhost:8000`，前端请求 `axios.get('/api/xxx')` 会转发到 `http://localhost:8000/api/xxx`。
+5. **若出现 404**：检查后端是否已启动、端口是否为 8000；检查请求路径是否与后端路由一致（如 `/api/user/info`、`/api/evaluations` 等）。
 
 ### 管理员登录与入口
 
@@ -213,6 +242,9 @@ npm run dev
 
 ```
 HealthData-Valuator/
+├── package.json               # 根目录：npm run dev 一键启动前后端；npm run init-env 生成 .env
+├── scripts/
+│   └── copy-env.js            # 复制 backend/.env.example → backend/.env（不存在时）
 ├── backend/                    # 后端项目目录
 │   ├── main.py                # FastAPI 应用入口（简化版）
 │   ├── requirements.txt       # Python 依赖列表
