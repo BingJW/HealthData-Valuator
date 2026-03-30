@@ -155,8 +155,10 @@ EXIT;
 
 # 2.3 配置环境变量
 cd backend
-# 复制环境变量示例文件
-cp .env.example .env
+# 复制环境变量示例文件为 .env（必须在 backend 目录下执行，任选一种）
+cp .env.example .env                    # Linux / macOS / Git Bash
+#   Copy-Item .env.example .env             # Windows PowerShell
+#   copy .env.example .env                  # Windows CMD
 # 编辑 .env 文件，填入你的 MySQL 配置信息
 # DB_HOST=localhost
 # DB_PORT=3306
