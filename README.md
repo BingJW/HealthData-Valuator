@@ -335,6 +335,15 @@ HealthData-Valuator/
 
 ---
 
+## 阿里云公网部署
+
+面向仅有公网 IP 的部署方案（Nginx 反代前端 + 反代 `/api` 到后端，后端用 systemd 守护进程）。
+
+参考文档：
+* `DEPLOY_ALIYUN_PUBLIC.md`
+* `deploy_nginx_public.conf`
+* `deploy_backend_systemd.service`
+
 ## 注意事项
 
 1. **数据库配置**: 

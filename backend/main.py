@@ -96,7 +96,8 @@ app = FastAPI(title="HealthData-Valuator API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # token 保存在 localStorage，并非 cookie 跨站，不需要凭证模式
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
