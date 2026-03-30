@@ -1,7 +1,7 @@
 {
   "name": "health-data-valuator",
   "private": true,
-  "description": "根目录脚本：一键启动前后端、初始化环境变量",
+  "description": "!根目录脚本：一键启动前后端、初始化环境变量",
   "scripts": {
     "init-env": "node scripts/copy-env.js",
     "dev": "concurrently -k -n API,WEB -c cyan,magenta \"npm run dev:api\" \"npm run dev:web\"",
