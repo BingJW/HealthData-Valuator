@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -15,7 +16,8 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # 固定从 backend/.env 读取，避免部署时工作目录不同导致读不到 .env
+        env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8-sig",  # 支持 UTF-8 with BOM
         case_sensitive=True,
         extra="ignore"  # 忽略额外的字段（如 BOM 字符）

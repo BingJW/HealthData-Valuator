@@ -8,9 +8,17 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+.venv/
+venv/
+*_venv/
+
+__pycache__/
+*.py[cod]
+
+.env
+.env.*
+!.env.example
+
 *.local
 
 # Editor directories and files
