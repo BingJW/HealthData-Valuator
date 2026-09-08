@@ -25,9 +25,10 @@
       </div>
     </el-header>
 
+    <el-button class="mobile-menu-toggle" :aria-expanded="menuOpen" aria-controls="personal-navigation" @click="menuOpen = !menuOpen">{{ menuOpen ? '收起导航' : '展开导航' }}</el-button>
     <div class="main-content">
       <!-- 侧边栏 -->
-      <el-aside class="sidebar" width="250px">
+      <el-aside v-show="!isMobile || menuOpen" id="personal-navigation" class="sidebar" width="250px">
         <el-menu
           :default-active="activeMenu"
           :default-openeds="subMenuOpeneds"
@@ -74,7 +75,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { useResponsive } from '@/utils/responsive'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { 
@@ -85,10 +87,14 @@ import {
   QuestionFilled,
   ArrowDown 
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+
+const { isMobile } = useResponsive()
+const menuOpen = ref(false)
 
 const router = useRouter()
 const route = useRoute()
+watch(() => route.path, () => { menuOpen.value = false })
 const userStore = useUserStore()
 
 // 从store获取用户信息
@@ -144,7 +150,7 @@ const handleMenuSelect = (index) => {
       router.push('/personal-center/profile')
       break
     case 'help':
-      ElMessage.info('帮助文档正在建设中...')
+      window.open('/documents/user-guide.pdf', '_blank', 'noopener')
       break
   }
 }
@@ -255,4 +261,18 @@ const handleCommand = async (command) => {
 :deep(.el-sub-menu__title:hover) {
   background-color: #f5f5f5;
 }
+
+.content { min-width: 0; }
+@media (max-width: 768px) {
+  .personal-center-container { height: auto; min-height: 100dvh; }
+  .header { height: auto; padding: 12px; }
+  .header-content { gap: 12px; flex-wrap: wrap; }
+  .logo h2 { font-size: 18px; }
+  .user-name { overflow-wrap: anywhere; }
+  .main-content { flex-direction: column; overflow: visible; }
+  .sidebar { width: 100%; border-right: 0; }
+  .sidebar-menu { height: auto; }
+  .content { padding: 12px; overflow: visible; }
+}
+
 </style>

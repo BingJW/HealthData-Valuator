@@ -1,53 +1,24 @@
-from sqlalchemy.orm import Session
-from ..models import models
-from ..schemas import schemas
+"""Shared validation and ownership helpers for the active API."""
+import json
+from decimal import Decimal
+from fastapi import HTTPException
+from app.models.models import Evaluation
 
-def create_evaluation(db: Session, evaluation: schemas.EvaluationCreate, user_id: int):
-    """
-    创建测算记录逻辑：
-    1. 计算所有子项指标金额的总和
-    2. 持久化评估主任务
-    3. 批量记录各项指标明细数据
-    """
-    # 遍历指标列表并累加金额
-    total = sum(item.amount for item in evaluation.indicators)
-    
-    # 创建并保存评估主记录
-    db_eval = models.Evaluation(
-        user_id=user_id,
-        evaluation_name=evaluation.evaluation_name, 
-        total_value=total,
-        status="completed"
-    )
-    db.add(db_eval)
-    db.commit()      # 提交以生成主表自增ID
-    db.refresh(db_eval)
-    
-    # 循环写入指标明细，建立与主记录的关联
-    for item in evaluation.indicators:
-        db_indicator = models.IndicatorData(
-            evaluation_id=db_eval.id,
-            category=item.category,
-            item_name=item.item_name,
-            amount=item.amount
-        )
-        db.add(db_indicator)
-    
-    db.commit() # 提交所有指标明细数据
-    return db_eval
+def owned_evaluation(db, eval_id, username):
+    record = db.query(Evaluation).filter(Evaluation.id == eval_id).first()
+    if not record or (username != 'admin' and record.username != username):
+        raise HTTPException(status_code=404, detail='评估不存在或无权访问')
+    return record
 
-def get_user_by_username(db: Session, username: str):
-    """根据用户名检索用户对象"""
-    return db.query(models.User).filter(models.User.username == username).first()
-
-def create_user(db: Session, user: schemas.UserCreate):
-    """执行新用户注册逻辑"""
-    db_user = models.User(
-        username=user.username,
-        password=user.password,
-        hospital=user.hospital
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+def serialize_indicators(items):
+    keys = [(i.category, i.item_name) for i in items]
+    if len(set(keys)) != len(keys):
+        raise HTTPException(status_code=422, detail='同一类别不能重复提交相同成本项')
+    total = sum((i.amount for i in items), Decimal('0.00'))
+    if total <= 0:
+        raise HTTPException(status_code=422, detail='请至少填写一项正数成本')
+    raw = [dict(category=i.category, item_name=i.item_name, amount=float(i.amount)) for i in items]
+    payload = json.dumps(raw, ensure_ascii=False, separators=(',', ':'))
+    if len(payload) > 5000:
+        raise HTTPException(status_code=422, detail='指标数据超过存储长度，请减少成本项或缩短名称')
+    return payload, float(total)

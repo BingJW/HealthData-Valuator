@@ -12,10 +12,11 @@
           <el-button link @click="scrollTo('team')">团队简介</el-button>
           <el-button link @click="scrollTo('contact')">联系我们</el-button>
         </div>
-        <div class="auth-buttons">
+        <div class="auth-buttons" v-if="!userStore.isAuthenticated">
           <el-button @click="$router.push('/login')">登录</el-button>
           <el-button type="primary" @click="$router.push('/register')">免费注册</el-button>
         </div>
+        <el-button v-else type="primary" @click="$router.push('/personal-center')">个人中心</el-button>
       </div>
     </el-header>
 
@@ -32,6 +33,17 @@
             </el-button>
             <el-button size="large" @click="scrollTo('features')">了解更多</el-button>
           </div>
+        </div>
+      </section>
+
+      <section class="guide-section" aria-labelledby="guide-title">
+        <div>
+          <h3 id="guide-title">用户操作指引</h3>
+          <p>了解注册登录、成本录入、评估报告和历史记录管理。</p>
+        </div>
+        <div class="guide-actions">
+          <a class="guide-link" href="/documents/user-guide.pdf" target="_blank" rel="noopener">在线阅读</a>
+          <a class="guide-link guide-download" href="/documents/user-guide.pdf" download="医疗数据资产价值计量器_操作指引.pdf">下载指引</a>
         </div>
       </section>
 
@@ -117,7 +129,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { useUserStore } from '@/store/user'
+const userStore = useUserStore()
 
 const scrollTo = (id) => {
   const element = document.getElementById(id)
@@ -256,6 +269,39 @@ const scrollTo = (id) => {
   color: white;
   margin-top: auto;
 }
+
+@media (max-width: 900px) {
+  .header { height: auto; padding: 12px 16px; }
+  .header-content { flex-wrap: wrap; gap: 8px 12px; }
+  .logo { flex: 1 1 100%; }
+  .logo h1 { font-size: 20px; line-height: 1.5; }
+  .nav-links { gap: 8px; flex-wrap: wrap; }
+  .auth-buttons { gap: 8px; flex-wrap: wrap; }
+  .header .el-button + .el-button { margin-left: 0; }
+}
+@media (max-width: 768px) {
+  .home-container > .el-main { padding: 0; }
+  .hero-section { padding: 48px 16px; }
+  .hero-content h2 { font-size: clamp(26px, 7vw, 36px); margin-top: 0; }
+  .subtitle { font-size: 16px; line-height: 1.8; margin-bottom: 24px; }
+  .hero-actions { gap: 12px; flex-wrap: wrap; }
+  .hero-actions .el-button { margin-left: 0; }
+  .features-section, .team-section, .cta-section, .contact-section { margin: 32px auto; padding: 0 16px; scroll-margin-top: 180px; }
+  .features-section h3, .team-section h3, .cta-section h3, .contact-section h3 { font-size: 24px; margin-bottom: 20px; }
+  .features-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 20px; }
+  .team-card { padding: 0; text-align: left; line-height: 1.8; }
+  .cta-section, .contact-section { padding: 24px 16px; }
+  .footer { height: auto; font-size: 13px; line-height: 1.6; }
+}
+
+.guide-section { max-width: 1200px; margin: 24px auto; padding: 24px; background: white; border-radius: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.guide-section h3 { margin: 0 0 8px; }
+.guide-section p { margin: 0; line-height: 1.7; color: #606266; }
+.guide-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.guide-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid #409eff; color: #1768bb; border-radius: 6px; text-decoration: none; }
+.guide-link:focus-visible { outline: 3px solid #243f80; outline-offset: 3px; }
+.guide-download { background: #1768bb; color: white; }
+@media (max-width: 768px) { .guide-section { margin: 16px; padding: 16px; } .guide-actions, .guide-link { flex: 1 1 100%; } }
 </style>
 
 

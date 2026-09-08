@@ -32,6 +32,7 @@
         </div>
       </template>
 
+      <p class="table-scroll-hint">左右滑动表格可查看全部内容和操作</p>
       <el-table
         :data="list"
         v-loading="loading"
@@ -59,7 +60,7 @@
             <el-tag :type="statusType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="220" :fixed="isMobile ? false : 'right'">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="view(row.id)">查看</el-button>
             <el-button type="primary" link size="small" @click="edit(row.id)">编辑</el-button>
@@ -83,19 +84,19 @@
     </el-card>
 
     <el-row :gutter="20" class="stats-row">
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ total }}</div>
           <div class="stat-label">评估总数</div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ formatCurrency(stats.totalValue) }}</div>
           <div class="stat-label">总估值</div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ formatCurrency(stats.averageValue) }}</div>
           <div class="stat-label">平均估值</div>
@@ -106,11 +107,15 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/utils/responsive'
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getEvaluationsAPI, getEvaluationStatsAPI, deleteEvaluationAPI, duplicateEvaluationAPI } from '@/api/evaluation'
+import { getSystemStatsAPI } from '@/api/admin'
+import { getEvaluationsAPI, deleteEvaluationAPI, duplicateEvaluationAPI } from '@/api/evaluation'
+
+const { isMobile } = useResponsive()
 
 const router = useRouter()
 const loading = ref(false)
@@ -133,6 +138,7 @@ async function fetchList() {
   loading.value = true
   try {
     const res = await getEvaluationsAPI({
+      scope: 'all',
       page: page.value,
       pageSize: pageSize.value,
       keyword: keyword.value || undefined,
@@ -157,11 +163,11 @@ async function fetchList() {
 
 async function fetchStats() {
   try {
-    const res = await getEvaluationStatsAPI()
+    const res = await getSystemStatsAPI()
     const d = res?.data || {}
     stats.totalValue = d.total_value ?? 0
     stats.averageValue = d.average_value ?? 0
-  } catch (_) {}
+  } catch (error) { ElMessage.error(error.response?.data?.detail || '统计数据加载失败') }
 }
 
 function view(id) {
@@ -222,4 +228,14 @@ onMounted(() => {
 .stat-card { text-align: center; }
 .stat-value { font-size: 20px; font-weight: 600; color: #2c3e50; }
 .stat-label { font-size: 13px; color: #666; margin-top: 4px; }
+
+@media (max-width: 768px) {
+  .header-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .header-actions > .el-input, .header-actions > .el-select { width: 100% !important; }
+  .header-actions .el-button { margin-left: 0; }
+  .pagination-wrap { justify-content: center; }
+  .card-header { flex-wrap: wrap; gap: 12px; }
+  .weight-setting-container { padding: 0; }
+}
+
 </style>

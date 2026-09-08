@@ -1,6 +1,6 @@
 <!-- frontend/src/views/DataInput.vue -->
 <template>
-  <div class="data-input-container">
+  <div class="data-input-container" v-loading="!ready">
     <el-card class="main-card">
       <template #header>
         <div class="card-header">
@@ -15,6 +15,7 @@
         label-position="top"
         class="data-form"
       >
+        <el-alert v-if="extraIndicators.length" :closable="false" type="info" :title="`本记录含 ${extraIndicators.length} 项历史成本，保存时将保留这些项目。`" />
         <!-- 评估基本信息 -->
         <el-card class="section-card">
           <template #header>
@@ -25,7 +26,7 @@
           </template>
           
           <el-row :gutter="20">
-            <el-col :span="12">
+            <el-col :xs="24" :sm="12">
               <el-form-item label="评估名称" required>
                 <el-input
                   v-model="formData.evaluationName"
@@ -34,7 +35,7 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
+            <el-col :xs="24" :sm="12">
               <el-form-item label="评估描述">
                 <el-input
                   v-model="formData.description"
@@ -61,7 +62,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category1Items" 
                   :key="item.key"
                 >
@@ -100,7 +101,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category2Items" 
                   :key="item.key"
                 >
@@ -139,7 +140,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category3Items" 
                   :key="item.key"
                 >
@@ -178,7 +179,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category4Items" 
                   :key="item.key"
                 >
@@ -217,7 +218,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category5Items" 
                   :key="item.key"
                 >
@@ -256,7 +257,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category6Items" 
                   :key="item.key"
                 >
@@ -295,7 +296,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category7Items" 
                   :key="item.key"
                 >
@@ -334,7 +335,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category8Items" 
                   :key="item.key"
                 >
@@ -373,7 +374,7 @@
             <div class="collapse-content">
               <el-row :gutter="20">
                 <el-col 
-                  :span="12" 
+                  :xs="24" :sm="12"
                   v-for="item in category9Items" 
                   :key="item.key"
                 >
@@ -426,7 +427,7 @@
             type="info" 
             :loading="savingDraft"
             @click="saveAsDraft"
-            :disabled="!hasChanges"
+            :disabled="!ready || !hasChanges"
           >
             {{ savingDraft ? '保存中...' : '保存草稿' }}
           </el-button>
@@ -435,9 +436,9 @@
             type="primary" 
             :loading="submitting"
             @click="submitForm"
-            :disabled="!isFormValid"
+            :disabled="!ready || !isFormValid"
           >
-            {{ submitting ? '提交中...' : '提交评估' }}
+            {{ submitting ? '保存中...' : (editId ? '保存修改' : '提交评估') }}
           </el-button>
         </div>
       </el-form>
@@ -446,26 +447,22 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { createEvaluationAPI } from '@/api/evaluation'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
+import { useUserStore } from '@/store/user'
+import { createEvaluationAPI, getEvaluationDetailAPI, updateEvaluationAPI } from '@/api/evaluation'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
+const userStore = useUserStore()
+const editId = ref(null)
+const ready = ref(false)
+const baseline = ref('')
+const extraIndicators = ref([])
+const draftKey = () => `evaluationDraft:${userStore.userInfo.username}`
+const snapshot = () => JSON.stringify(formData)
 const dataFormRef = ref()
-
-// 9大类指标定义（基于文档1）- 内联定义
-const categories = [
-  { id: 1, name: '数据战略与治理成本' },
-  { id: 2, name: '数据获取与采集成本' },
-  { id: 3, name: '数据存储与备份成本' },
-  { id: 4, name: '数据处理与加工成本' },
-  { id: 5, name: '数据应用与分析成本' },
-  { id: 6, name: '数据流通与共享成本' },
-  { id: 7, name: '数据安全、隐私与合规成本' },
-  { id: 8, name: '数据归档与销毁成本' },
-  { id: 9, name: '数据全流程人力成本' }
-]
 
 // 第1类指标项
 const category1Items = [
@@ -684,7 +681,7 @@ const category9Items = [
 ]
 
 // 状态
-const activeCollapse = ref(['1'])
+const activeCollapse = ref('1')
 const savingDraft = ref(false)
 const submitting = ref(false)
 
@@ -784,13 +781,7 @@ const calculateTotal = () => {
   for (let i = 1; i <= 9; i++) {
     total += calculateCategoryTotal(i)
   }
-  return total
-}
-
-// 获取类别名称
-const getCategoryName = (categoryId) => {
-  const category = categories.find(cat => cat.id === categoryId)
-  return category ? category.name : `类别${categoryId}`
+  return total + extraIndicators.value.reduce((sum, item) => sum + Number(item.amount), 0)
 }
 
 // 验证表单数据
@@ -803,7 +794,7 @@ const validateFormData = () => {
   }
   
   // 检查至少有一项有数据
-  let hasData = false
+  let hasData = extraIndicators.value.some(item => Number(item.amount) > 0)
   for (let i = 1; i <= 9; i++) {
     const categoryData = formData[`category${i}`]
     if (categoryData) {
@@ -835,15 +826,7 @@ const formatCurrency = (value) => {
 }
 
 // 检查表单是否有更改
-const hasChanges = computed(() => {
-  return formData.evaluationName.trim() !== '' || 
-         Object.values(formData).some(value => {
-           if (typeof value === 'object') {
-             return Object.values(value).some(v => v !== 0)
-           }
-           return false
-         })
-})
+const hasChanges = computed(() => ready.value && snapshot() !== baseline.value)
 
 // 检查表单是否有效
 const isFormValid = computed(() => {
@@ -855,8 +838,9 @@ const isFormValid = computed(() => {
 const saveAsDraft = async () => {
   savingDraft.value = true
   try {
-    const toSave = { ...formData, __savedAt: Date.now() }
-    localStorage.setItem('evaluationDraft', JSON.stringify(toSave))
+    const toSave = { ...formData, __savedAt: Date.now(), __editId: editId.value, __extra: extraIndicators.value }
+    localStorage.setItem(draftKey(), JSON.stringify(toSave))
+    baseline.value = snapshot()
     await new Promise(resolve => setTimeout(resolve, 300))
     ElMessage.success('草稿保存成功')
   } catch (error) {
@@ -881,7 +865,7 @@ const submitForm = async () => {
     const submitData = {
       name: formData.evaluationName,
       description: formData.description,
-      indicators: []
+      indicators: [...extraIndicators.value]
     }
 
     // 转换表单数据为后端需要的格式
@@ -903,11 +887,12 @@ const submitForm = async () => {
     }
 
     // 调用API
-    const response = await createEvaluationAPI(submitData)
+    const response = await (editId.value ? updateEvaluationAPI(editId.value, submitData) : createEvaluationAPI(submitData))
     
     if (response.data && response.data.id) {
       // 清除草稿
-      localStorage.removeItem('evaluationDraft')
+      localStorage.removeItem(draftKey())
+      baseline.value = snapshot()
       
       ElMessage.success('评估提交成功！')
       
@@ -922,26 +907,57 @@ const submitForm = async () => {
   }
 }
 
-// 组件挂载时检查是否有草稿
-onMounted(() => {
-  const savedDraft = localStorage.getItem('evaluationDraft')
-  if (savedDraft) {
-    try {
-      const draftData = JSON.parse(savedDraft)
-      Object.assign(formData, draftData)
-      ElMessage.info('已加载上次保存的草稿')
-    } catch (error) {
-      console.error('加载草稿失败:', error)
+// Load persisted records before local drafts, and preserve unrecognized legacy fields.
+onMounted(async () => {
+  try {
+    if (!userStore.userInfo.username) await userStore.getUserInfo()
+    if (route.query.edit) {
+      if (!/^\d+$/.test(String(route.query.edit))) throw new Error('无效的评估编号')
+      editId.value = Number(route.query.edit)
+      const { data } = await getEvaluationDetailAPI(editId.value)
+      formData.evaluationName = data.name
+      formData.description = data.description || ''
+      for (const item of data.indicators || []) {
+        const category = formData[`category${item.category}`]
+        if (category && Object.hasOwn(category, item.item_name)) category[item.item_name] = Number(item.amount)
+        else extraIndicators.value.push(item)
+      }
+    } else {
+      const raw = localStorage.getItem(draftKey())
+      if (raw) {
+        const draft = JSON.parse(raw)
+        formData.evaluationName = typeof draft.evaluationName === 'string' ? draft.evaluationName : ''
+        formData.description = typeof draft.description === 'string' ? draft.description : ''
+        for (let i = 1; i <= 9; i++) {
+          for (const key of Object.keys(formData[`category${i}`])) {
+            const value = Number(draft[`category${i}`]?.[key] ?? 0)
+            formData[`category${i}`][key] = Number.isFinite(value) && value >= 0 ? value : 0
+          }
+        }
+        editId.value = draft.__editId || null
+        extraIndicators.value = Array.isArray(draft.__extra) ? draft.__extra : []
+        ElMessage.info('已加载当前账号的本机草稿')
+      }
     }
+    baseline.value = snapshot()
+    ready.value = true
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '无法加载记录或草稿，请返回草稿箱处理后重试')
+    await router.replace('/personal-center/drafts')
   }
 })
 
-// 离开页面时提示保存
-window.addEventListener('beforeunload', (e) => {
-  if (hasChanges.value) {
-    e.preventDefault()
-    e.returnValue = '您有未保存的更改，确定要离开吗？'
-  }
+const beforeUnload = (event) => {
+  if (hasChanges.value) { event.preventDefault(); event.returnValue = '' }
+}
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
+onBeforeRouteLeave(async () => {
+  if (!hasChanges.value) return true
+  try {
+    await ElMessageBox.confirm('有未保存的修改，确定离开吗？', '提示', { confirmButtonText: '离开', cancelButtonText: '继续编辑' })
+    return true
+  } catch { return false }
 })
 </script>
 
@@ -1094,4 +1110,24 @@ window.addEventListener('beforeunload', (e) => {
   padding-top: 20px;
   border-top: 1px solid #e6e6e6;
 }
+
+.section-number { width: auto; min-width: 64px; padding: 0 8px; border-radius: 15px; flex-shrink: 0; }
+@media (max-width: 768px) {
+  .data-input-container { padding: 12px; }
+  .card-header { padding: 4px 0; }
+  .card-header h2 { font-size: 22px; }
+  .collapse-header { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 4px 10px; flex: 1; min-width: 0; text-align: left; }
+  .collapse-header h3 { font-size: 16px; line-height: 1.5; }
+  .collapse-total { grid-column: 2; font-size: 14px; overflow-wrap: anywhere; line-height: 1.5; }
+  :deep(.el-collapse-item__header) { height: auto; min-height: 64px; }
+  .collapse-content { padding: 12px; }
+  .total-content { padding: 0; }
+  .total-item { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .total-value { font-size: 24px; overflow-wrap: anywhere; }
+  .total-breakdown { grid-template-columns: minmax(0, 1fr); }
+  .category-total { gap: 8px; flex-wrap: wrap; }
+  .form-actions { flex-direction: column; gap: 12px; }
+  .form-actions .el-button { margin-left: 0; width: 100%; }
+}
+
 </style>

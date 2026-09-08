@@ -57,7 +57,6 @@
           <span>还没有账号？</span>
           <el-button link type="primary" @click="$router.push('/register')">立即注册</el-button>
         </div>
-        <p class="login-tip">管理员账号：admin / admin123（首次打开登录页时已自动初始化）</p>
         <div class="form-footer">
           <el-button link @click="$router.push('/')">返回首页</el-button>
         </div>
@@ -67,12 +66,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '../store/user'
 import { ElMessage } from 'element-plus'
-import { initDemoDataAPI } from '@/api/demo'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -86,28 +84,20 @@ const loginForm = reactive({
 const loginRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度为3-20个字符', trigger: 'blur' }
+    { min: 1, max: 50, message: '用户名长度为1-50个字符', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度为6-20个字符', trigger: 'blur' }
+    { min: 1, max: 256, message: '请输入有效密码', trigger: 'blur' }
   ]
 }
 
 const loading = ref(false)
 
-onMounted(async () => {
-  try {
-    await initDemoDataAPI()
-  } catch {
-    // 忽略（可能已初始化或后端未启动）
-  }
-})
-
 const handleLogin = async () => {
   // 表单验证
-  if (!loginFormRef.value) return
-  const valid = await loginFormRef.value.validate()
+  if (!loginFormRef.value || loading.value) return
+  const valid = await loginFormRef.value.validate().catch(() => false)
   if (!valid) return
 
   loading.value = true
@@ -187,4 +177,12 @@ const handleLogin = async () => {
   color: #909399;
   text-align: center;
 }
+
+@media (max-width: 768px) {
+  .login-container, .register-container { min-height: 100dvh; padding: 16px 12px; }
+  .card-header { padding: 8px 0; }
+  .card-header h2 { font-size: 22px; }
+  .login-form, .register-form { padding: 8px 0; }
+}
+
 </style>

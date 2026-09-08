@@ -1,6 +1,7 @@
 <template>
   <div class="admin-layout">
-    <aside class="admin-sidebar">
+    <el-button class="mobile-menu-toggle" :aria-expanded="menuOpen" aria-controls="admin-navigation" @click="menuOpen = !menuOpen">{{ menuOpen ? '收起管理导航' : '展开管理导航' }}</el-button>
+    <aside v-show="!isMobile || menuOpen" id="admin-navigation" class="admin-sidebar">
       <div class="sidebar-header">
         <el-icon :size="22"><Monitor /></el-icon>
         <span>管理后台</span>
@@ -48,11 +49,16 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { useResponsive } from '@/utils/responsive'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Monitor, DataAnalysis, Document, User, Setting, Back } from '@element-plus/icons-vue'
 
+const { isMobile } = useResponsive()
+const menuOpen = ref(false)
+
 const route = useRoute()
+watch(() => route.path, () => { menuOpen.value = false })
 const activeMenu = computed(() => route.path)
 </script>
 
@@ -121,16 +127,13 @@ const activeMenu = computed(() => route.path)
   opacity: 0;
 }
 
+.admin-main { min-width: 0; }
 @media (max-width: 768px) {
-  .admin-sidebar {
-    width: 64px;
-  }
-  .sidebar-header span,
-  .sidebar-menu .el-menu-item span {
-    display: none;
-  }
-  .sidebar-footer .el-button span {
-    display: none;
-  }
+  .admin-layout { flex-direction: column; min-height: 100dvh; }
+  .admin-sidebar { width: 100%; }
+  .sidebar-menu { padding: 0; }
+  .sidebar-header { height: 44px; }
+  .sidebar-footer { padding: 8px 12px; }
+  .admin-main { padding: 12px; overflow: visible; }
 }
 </style>

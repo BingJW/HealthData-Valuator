@@ -28,3 +28,4 @@ if __name__ == "__main__":
         print("1. MySQL 服务是否已启动")
         print("2. 数据库是否已创建")
         print("3. .env 文件中的数据库配置是否正确")
+        raise SystemExit(1)

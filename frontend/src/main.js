@@ -2,6 +2,7 @@
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import './assets/styles/responsive.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 // 导入路由和状态管理

@@ -1,9 +1,16 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+from sqlalchemy.engine import URL
 from pathlib import Path
 
 
 class Settings(BaseSettings):
+    DATABASE_URL: Optional[str] = None
+    SESSION_HOURS: int = Field(default=12, ge=1, le=720)
+    ENABLE_DEMO: bool = False
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
     # 数据库配置
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
@@ -27,6 +34,11 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-def get_database_url() -> str:
-    """生成数据库连接 URL"""
-    return f"mysql+pymysql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}?charset=utf8mb4"
+def get_database_url():
+    """URL.create safely handles @, :, / and other characters in passwords."""
+    if settings.DATABASE_URL:
+        return settings.DATABASE_URL
+    return URL.create('mysql+pymysql', username=settings.DB_USER,
+                      password=settings.DB_PASSWORD, host=settings.DB_HOST,
+                      port=settings.DB_PORT, database=settings.DB_NAME,
+                      query={'charset': 'utf8mb4'})

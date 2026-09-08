@@ -25,6 +25,7 @@
         </div>
       </template>
 
+      <p class="table-scroll-hint">左右滑动表格可查看全部内容和操作</p>
       <el-table :data="list" v-loading="loading" stripe style="width: 100%">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="username" label="用户名" width="140" />
@@ -35,7 +36,7 @@
         <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ row.email || '—' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="160" :fixed="isMobile ? false : 'right'">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="openEdit(row)">编辑</el-button>
             <el-button type="danger" link size="small" :disabled="row.username === 'admin'" @click="remove(row)">删除</el-button>
@@ -107,6 +108,7 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/utils/responsive'
 import { ref, reactive, onMounted, watch } from 'vue'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -117,6 +119,8 @@ import {
   updateAdminUserAPI,
   deleteAdminUserAPI
 } from '@/api/admin'
+
+const { isMobile } = useResponsive()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -264,4 +268,14 @@ onMounted(() => fetchList())
 .card-header h3 { margin: 0; font-size: 16px; }
 .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pagination-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
+
+@media (max-width: 768px) {
+  .header-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .header-actions > .el-input, .header-actions > .el-select { width: 100% !important; }
+  .header-actions .el-button { margin-left: 0; }
+  .pagination-wrap { justify-content: center; }
+  .card-header { flex-wrap: wrap; gap: 12px; }
+  .weight-setting-container { padding: 0; }
+}
+
 </style>

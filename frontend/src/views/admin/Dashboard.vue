@@ -81,9 +81,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Document, Money, DataAnalysis } from '@element-plus/icons-vue'
+import { User, Document } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getSystemStatsAPI } from '@/api/admin'
 import { getEvaluationsAPI } from '@/api/evaluation'
@@ -109,7 +109,7 @@ async function refreshData() {
   try {
     const [statsRes, listRes] = await Promise.all([
       getSystemStatsAPI(),
-      getEvaluationsAPI({ page: 1, pageSize: 5 })
+      getEvaluationsAPI({ page: 1, pageSize: 5, scope: 'all' })
     ])
     const d = statsRes?.data || {}
     overviewCards.value = [
@@ -138,7 +138,7 @@ function viewEvaluation(id) {
 
 async function initDemoData() {
   try {
-    await ElMessageBox.confirm('确定初始化演示数据？将创建测试用户与示例评估。', '确认', {
+    await ElMessageBox.confirm('确定创建演示评估？需服务端启用演示模式，不会创建默认账号。', '确认', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'

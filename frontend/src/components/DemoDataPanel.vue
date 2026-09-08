@@ -13,22 +13,11 @@
             title="演示数据说明"
             type="info"
             :closable="false"
-            description="初始化演示数据将清空现有数据，创建3个测试用户和3个评估示例。"
+            description="仅管理员且服务端启用演示模式时可创建示例，不会清空数据或创建默认账号。"
             class="mb-4"
           />
           
-          <el-descriptions :column="1" border>
-            <el-descriptions-item label="测试用户">
-              <el-tag type="success" class="mr-2">admin / admin123</el-tag>
-              <el-tag class="mr-2">doctor_zhang / password123</el-tag>
-              <el-tag type="warning">nurse_li / password123</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="评估示例">
-              1. 2023年度数据资产评估 (125万元)<br>
-              2. 急诊科数据专项评估 (85万元)<br>
-              3. 医疗影像数据评估 (210万元)
-            </el-descriptions-item>
-          </el-descriptions>
+          <p>重复执行不会重复创建示例评估。</p>
           
           <div class="mt-6 text-center">
             <el-button
@@ -111,7 +100,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { 
   Refresh, 
   User, 
@@ -170,7 +159,7 @@ const fetchStats = async () => {
 const handleInitDemoData = async () => {
   try {
     await ElMessageBox.confirm(
-      '确定要初始化演示数据吗？现有数据将被清空。',
+      '确定创建演示评估吗？不会清空现有数据。',
       '警告',
       {
         confirmButtonText: '确定',

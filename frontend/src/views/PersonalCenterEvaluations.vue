@@ -7,6 +7,7 @@
           新建评估
         </el-button>
       </template>
+      <p class="table-scroll-hint">左右滑动表格可查看全部内容和操作</p>
       <el-table v-loading="loading" :data="list" stripe>
         <el-table-column prop="name" label="评估名称" min-width="160" />
         <el-table-column prop="totalValue" label="总估值（元）" width="140">
@@ -22,7 +23,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="160" :fixed="isMobile ? false : 'right'">
           <template #default="{ row }">
             <el-button type="primary" link @click="$router.push('/result/' + row.id)">查看报告</el-button>
           </template>
@@ -42,8 +43,11 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/utils/responsive'
 import { ref, onMounted } from 'vue'
 import { getEvaluationsAPI } from '@/api/evaluation'
+
+const { isMobile } = useResponsive()
 
 const loading = ref(false)
 const list = ref([])

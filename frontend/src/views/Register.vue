@@ -202,7 +202,7 @@ const loading = ref(false)
 
 const handleRegister = async () => {
   if (!registerFormRef.value) return
-  const valid = await registerFormRef.value.validate()
+  const valid = await registerFormRef.value.validate().catch(() => false)
   if (!valid) return
 
   loading.value = true
@@ -214,8 +214,9 @@ const handleRegister = async () => {
       phone: registerForm.phone,
       email: registerForm.email || undefined
     })
+    router.push('/login')
   } catch (error) {
-    console.error('注册失败:', error)
+    ElMessage.error(error.response?.data?.detail || '注册失败，请检查填写内容')
   } finally {
     loading.value = false
   }
@@ -274,4 +275,12 @@ const handleRegister = async () => {
 .form-footer .el-button {
   margin-left: 5px;
 }
+
+@media (max-width: 768px) {
+  .login-container, .register-container { min-height: 100dvh; padding: 16px 12px; }
+  .card-header { padding: 8px 0; }
+  .card-header h2 { font-size: 22px; }
+  .login-form, .register-form { padding: 8px 0; }
+}
+
 </style>

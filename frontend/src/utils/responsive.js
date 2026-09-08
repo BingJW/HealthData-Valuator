@@ -1,5 +1,5 @@
 // frontend/src/utils/responsive.js
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // 屏幕尺寸定义
 export const breakpoints = {
@@ -29,8 +29,8 @@ export function useResponsive() {
     window.removeEventListener('resize', onResize)
   })
   
-  const isMobile = computed(() => width.value < breakpoints.md)
-  const isTablet = computed(() => width.value >= breakpoints.md && width.value < breakpoints.lg)
+  const isMobile = computed(() => width.value <= breakpoints.md)
+  const isTablet = computed(() => width.value > breakpoints.md && width.value < breakpoints.lg)
   const isDesktop = computed(() => width.value >= breakpoints.lg)
   
   return {
@@ -44,13 +44,10 @@ export function useResponsive() {
 
 // 自适应字体大小
 export function useFluidTypography(minSize, maxSize, minViewport = 375, maxViewport = 1920) {
-  const { width } = useResponsive()
-  
+  if (maxViewport <= minViewport || maxSize < minSize) throw new RangeError('Invalid typography range')
   return computed(() => {
-    const viewportWidth = Math.min(Math.max(width.value, minViewport), maxViewport)
     const slope = (maxSize - minSize) / (maxViewport - minViewport)
     const base = minSize - slope * minViewport
-    
-    return `calc(${base}px + ${slope * 100}vw)`
+    return `clamp(${minSize}px, ${base}px + ${slope * 100}vw, ${maxSize}px)`
   })
 }

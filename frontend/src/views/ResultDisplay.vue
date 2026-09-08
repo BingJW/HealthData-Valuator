@@ -20,7 +20,7 @@
         </div>
         <div class="header-right">
           <div class="hospital-info">
-            <h3>{{ evaluationResult.hospital || userStore.userInfo?.hospital || '未指定医院' }}</h3>
+            <h3>{{ evaluationResult.hospital || '未指定医院' }}</h3>
             <p class="evaluation-time">评估时间: {{ formatDate(evaluationResult.createdAt) }}</p>
             <p class="evaluation-name" v-if="evaluationResult.name">评估名称: {{ evaluationResult.name }}</p>
           </div>
@@ -57,6 +57,7 @@
             v-for="category in evaluationResult.categories" 
             :key="category.id"
             class="category-card"
+            :data-category="category.id"
             shadow="never"
             :style="{ borderLeft: `4px solid ${getCategoryColor(category.id)}` }"
             @click="focusCategory(category.id)"
@@ -109,7 +110,8 @@
           </div>
         </div>
         
-        <el-table 
+        <p class="table-scroll-hint">左右滑动表格可查看全部内容和操作</p>
+      <el-table
           :data="evaluationResult.details" 
           stripe
           border
@@ -117,9 +119,9 @@
           :row-class-name="tableRowClassName"
           @row-click="handleRowClick"
         >
-          <el-table-column type="index" label="序号" width="60" align="center" fixed />
+          <el-table-column type="index" label="序号" width="60" align="center" :fixed="!isMobile" />
           
-          <el-table-column prop="categoryName" label="成本类别" width="180" fixed>
+          <el-table-column prop="categoryName" label="成本类别" width="180" :fixed="!isMobile">
             <template #default="{ row }">
               <div class="category-cell">
                 <span 
@@ -168,7 +170,7 @@
             </template>
           </el-table-column>
           
-          <el-table-column label="操作" width="120" fixed="right">
+          <el-table-column label="操作" width="120" :fixed="isMobile ? false : 'right'">
             <template #default="{ row }">
               <el-button 
                 link 
@@ -180,6 +182,10 @@
             </template>
           </el-table-column>
         </el-table>
+        <table class="print-table">
+          <thead><tr><th>成本类别</th><th>成本项目</th><th>金额（元）</th><th>占比</th></tr></thead>
+          <tbody><tr v-for="(item, index) in evaluationResult.details" :key="index"><td>{{ item.categoryName }}</td><td>{{ item.itemName }}</td><td>{{ formatCurrency(item.amount) }}</td><td>{{ item.percentage }}%</td></tr></tbody>
+        </table>
         
         <div class="table-summary">
           <div class="summary-item">
@@ -334,7 +340,7 @@
       :title="selectedCategory ? selectedCategory.name + ' - 详细成本' : ''"
       width="600px"
     >
-      <el-table 
+      <el-table
         :data="selectedCategory?.details || []" 
         size="small"
         stripe
@@ -383,9 +389,10 @@
     <!-- 分享对话框：仅复制链接 -->
     <el-dialog
       v-model="showShareDialog"
-      title="分享评估报告"
+      title="复制报告访问链接"
       width="400px"
     >
+      <p>此链接需要登录，仅报告所属账号或管理员可查看。向其他人提供报告请导出 PDF。</p>
       <div class="share-link" v-if="shareLink">
         <el-input v-model="shareLink" readonly>
           <template #append>
@@ -401,9 +408,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { csvCell, copyText } from '@/utils/export'
+import { useResponsive } from '@/utils/responsive'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useUserStore } from '@/store/user'
 import { 
   getEvaluationResultAPI, 
   deleteEvaluationAPI,
@@ -428,13 +436,13 @@ import {
 import { 
   ElMessage, 
   ElLoading, 
-  ElMessageBox,
-  ElNotification
+  ElMessageBox
 } from 'element-plus'
+
+const { isMobile } = useResponsive()
 
 const route = useRoute()
 const router = useRouter()
-const userStore = useUserStore()
 
 // 状态管理
 const loading = ref(true)
@@ -459,11 +467,9 @@ const categoryColors = [
   '#2C3E50'  // 9. 数据全流程人力成本
 ]
 
-onMounted(async () => {
-  await loadEvaluationResult()
-})
 
 const loadEvaluationResult = async () => {
+  loading.value = true
   const loadingInstance = ElLoading.service({ 
     lock: true, 
     text: '加载评估结果中...',
@@ -484,67 +490,19 @@ const loadEvaluationResult = async () => {
     if (response.data) {
       evaluationResult.value = response.data
     } else {
-      // 模拟数据（实际开发中应删除）
-      evaluationResult.value = generateMockData(id)
+      throw new Error('报告数据为空')
     }
   } catch (error) {
-    ElMessage.error('加载评估结果失败: ' + (error.response?.data?.message || '网络错误'))
-    // 模拟数据（实际开发中应删除）
-    evaluationResult.value = generateMockData(route.params.id)
+    evaluationResult.value = null
+    ElMessage.error('加载评估结果失败: ' + (error.response?.data?.detail || error.message || '网络错误'))
   } finally {
     loading.value = false
     loadingInstance.close()
   }
 }
 
-// 生成模拟数据（仅用于开发演示）
-const generateMockData = (id) => {
-  const categories = [
-    { id: 1, name: '数据战略与治理成本', value: 50000 },
-    { id: 2, name: '数据获取与采集成本', value: 120000 },
-    { id: 3, name: '数据存储与备份成本', value: 80000 },
-    { id: 4, name: '数据处理与加工成本', value: 150000 },
-    { id: 5, name: '数据应用与分析成本', value: 200000 },
-    { id: 6, name: '数据流通与共享成本', value: 30000 },
-    { id: 7, name: '数据安全、隐私与合规成本', value: 60000 },
-    { id: 8, name: '数据归档与销毁成本', value: 25000 },
-    { id: 9, name: '数据全流程人力成本', value: 180000 }
-  ]
-
-  // 直接相加计算总值
-  const totalValue = categories.reduce((sum, cat) => sum + cat.value, 0)
-
-  const details = []
-  categories.forEach(category => {
-    const items = [
-      { name: `${category.name}-项目1`, value: category.value * 0.4 },
-      { name: `${category.name}-项目2`, value: category.value * 0.35 },
-      { name: `${category.name}-项目3`, value: category.value * 0.25 }
-    ]
-
-    items.forEach((item) => {
-      details.push({
-        categoryId: category.id,
-        categoryName: category.name,
-        itemName: item.name,
-        amount: item.value,
-        percentage: (item.value / totalValue) * 100,
-        description: '这是模拟数据描述，实际应从数据库获取'
-      })
-    })
-  })
-
-  return {
-    reportId: `REPORT-${id}-${new Date().getTime()}`,
-    hospital: '北京协和医院',
-    createdAt: new Date().toISOString(),
-    name: '2026年度数据资产评估',
-    status: 'completed',
-    totalValue,
-    categories,
-    details
-  }
-}
+onMounted(loadEvaluationResult)
+watch(() => route.params.id, loadEvaluationResult)
 
 // 格式化货币
 const formatCurrency = (value) => {
@@ -578,7 +536,7 @@ const getCategoryColor = (categoryId) => {
 // 计算百分比
 const calculatePercentage = (value) => {
   if (!evaluationResult.value || !evaluationResult.value.totalValue) return 0
-  return ((value / evaluationResult.value.totalValue) * 100).toFixed(2)
+  return Number(((value / evaluationResult.value.totalValue) * 100).toFixed(2))
 }
 
 // 获取状态类型
@@ -700,7 +658,7 @@ const exportToExcel = () => {
     rows.push([i + 1, d.categoryName, d.itemName, d.amount ?? '', (d.percentage ?? '').toString()])
   })
   const BOM = '\uFEFF'
-  const csv = BOM + rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+  const csv = BOM + rows.map(row => row.map(csvCell).join(',')).join('\r\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -730,46 +688,14 @@ const copyTableData = () => {
     .map(row => row.join('\t'))
     .join('\n')
   
-  navigator.clipboard.writeText(text)
+  copyText(text)
     .then(() => ElMessage.success('表格数据已复制到剪贴板'))
     .catch(() => ElMessage.error('复制失败'))
 }
 
-// 导出为图片（报告区域截图）
-const exportAsImage = async () => {
-  const r = evaluationResult.value
-  if (!r) {
-    ElMessage.warning('暂无报告可导出')
-    return
-  }
-  try {
-    const html2canvas = (await import('html2canvas')).default
-    const card = document.querySelector('.result-card')
-    if (!card) {
-      ElMessage.error('未找到报告区域')
-      return
-    }
-    ElMessage.info('正在生成图片...')
-    const canvas = await html2canvas(card, {
-      useCORS: true,
-      scale: 2,
-      logging: false,
-      backgroundColor: '#ffffff'
-    })
-    const link = document.createElement('a')
-    link.download = `评估报告_${(r.name || r.reportId || 'export').replace(/[/\\?*:]/g, '_')}_${Date.now()}.png`
-    link.href = canvas.toDataURL('image/png')
-    link.click()
-    ElMessage.success('图片已下载')
-  } catch (e) {
-    console.error(e)
-    ElMessage.error('图片导出失败: ' + (e?.message || '未知错误'))
-  }
-}
-
 // 复制到剪贴板
 const copyToClipboard = (text) => {
-  navigator.clipboard.writeText(text)
+  copyText(text)
     .then(() => ElMessage.success('链接已复制到剪贴板'))
     .catch(() => ElMessage.error('复制失败'))
 }
@@ -817,17 +743,6 @@ const goBack = () => {
   router.push('/personal-center')
 }
 
-// 处理建议操作
-const handleAdviceAction = (advice) => {
-  if (advice.action === 'contact') {
-    ElMessage.info('请联系管理员开启加权计算功能')
-  }
-}
-
-// 离开页面时清理
-onUnmounted(() => {
-  // 清理操作
-})
 </script>
 
 <style scoped>
@@ -1335,35 +1250,22 @@ onUnmounted(() => {
   }
 }
 
-/* 打印样式：隐藏无关元素，仅打印报告卡片 */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  .result-container,
-  .result-container *,
-  .result-card,
-  .result-card * {
-    visibility: visible;
-  }
-  .result-container {
-    padding: 0;
-    background: #fff;
-  }
-  .result-card {
-    max-width: 100%;
-    box-shadow: none;
-    border: none;
-  }
-  .primary-actions,
-  .secondary-actions,
-  .table-actions {
-    display: none !important;
-  }
-}
 </style>
 
 <style>
+.print-table { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  .result-container, .result-container * { visibility: visible; }
+  .result-container { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; background: white; }
+  .result-card { box-shadow: none !important; border: 0; }
+  .result-container .primary-actions, .result-container .secondary-actions,
+  .result-container .table-actions, .result-container .table-scroll-hint,
+  .result-container .detailed-table-section .el-table, .el-overlay { display: none !important; }
+  .print-table { display: table; width: 100%; border-collapse: collapse; font-size: 10pt; }
+  .print-table th, .print-table td { border: 1px solid #999; padding: 6px; overflow-wrap: anywhere; }
+  .print-table tr { break-inside: avoid; }
+}
 /* 全局表格样式 */
 .highlight-row {
   background-color: #f0f9ff !important;

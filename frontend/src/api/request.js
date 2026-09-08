@@ -2,6 +2,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { useUserStore } from '@/store/user'
 
 // 创建axios实例
 const request = axios.create({
@@ -33,14 +34,17 @@ request.interceptors.response.use(
     return response.data
   },
   (error) => {
-    console.error('API请求错误:', error)
+    if (Array.isArray(error.response?.data?.detail)) {
+      error.response.data.detail = error.response.data.detail.map(item => item.msg).join('；')
+    }
     
+    if (typeof error.response?.data?.detail === 'string') error.response.data.message = error.response.data.detail
     // 如果是401错误（未授权），清除token并跳转到登录页
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token')
+      useUserStore().clearToken()
       if (router.currentRoute.value.path !== '/login') {
         ElMessage.error('登录已过期，请重新登录')
-        router.push('/login')
+        router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }
     }
     

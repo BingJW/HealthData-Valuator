@@ -1,531 +1,385 @@
-# backend/main.py
-from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.middleware.cors import CORSMiddleware
+"""HealthData-Valuator HTTP API. Run with uvicorn main:app."""
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Optional, List
-from pydantic import BaseModel
-import secrets
-import uvicorn
 import json
+import logging
+import math
+import secrets
 
-# 引入 SQLAlchemy 相关库
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, func
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from fastapi import FastAPI, Depends, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import func, text, inspect
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session
 
-# --- 1. 数据库配置（MySQL） ---
-# 注意：main.py 中的数据库配置已迁移到 app/core/database.py
-# 这里保留是为了向后兼容，建议使用 app/core/database.py 中的配置
+from app.core.config import settings
 from app.core.database import engine, SessionLocal, Base
-from app.core.config import get_database_url
-SQLALCHEMY_DATABASE_URL = get_database_url()
+from app.core.security import hash_password, verify_password, token_digest, PREFIX
+from app.core.indicator_labels import INDICATOR_LABELS
+from app.models.models import User as UserTable, Evaluation as EvaluationTable, LoginSession, WeightSetting
+from app.schemas.schemas import (UserRegister, UserLogin, AdminUserCreate, AdminUserUpdate,
+                                UserProfileUpdate, EvaluationCreate, EvaluationUpdate)
+from app.crud.crud import owned_evaluation, serialize_indicators
 
-# --- 2. 数据库模型定义 ---
-class UserTable(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True)
-    password = Column(String(255))  # 实际项目建议 hash 加密
-    hospital = Column(String(200))
-    phone = Column(String(20), nullable=True)
-    email = Column(String(100), nullable=True)
 
-class EvaluationTable(Base):
-    __tablename__ = "evaluations"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200))
-    description = Column(String(500), nullable=True)
-    total_value = Column(Float, default=0.0)
-    indicators = Column(String(5000))
-    created_at = Column(String(50))
-    status = Column(String(50), default="completed")
-    username = Column(String(50), nullable=True, index=True)  # 创建者，用于「我的评估」仅看本人
-
-# 创建数据库表（如果不存在）
-# 注意：表结构定义在 app/models/models.py 中
-# 首次运行前请确保 MySQL 数据库已创建，然后运行: python init_db.py
-# 或者直接启动应用，表会自动创建
-try:
+@asynccontextmanager
+async def lifespan(app):
+    # Fail visibly on startup rather than serving a falsely healthy API.
     Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"警告: 数据库表创建失败，请检查数据库连接配置: {e}")
-
-# --- 3. Pydantic 模型（请求体校验） ---
-class UserRegister(BaseModel):
-    username: str
-    password: str
-    hospital: str
-    phone: Optional[str] = ""
-    email: Optional[str] = ""
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class WeightUpdate(BaseModel):
-    strategic_weight: float
-    security_weight: float
-    usability_weight: float
+    inspector = inspect(engine)
+    for model in (UserTable, EvaluationTable):
+        actual = {c['name'] for c in inspector.get_columns(model.__tablename__)}
+        missing = set(model.__table__.columns.keys()) - actual
+        if missing:
+            raise RuntimeError(f"数据库表 {model.__tablename__} 缺少字段 {sorted(missing)}；请先核对迁移说明，不要重建或删除旧表。")
+    yield
 
 
-class AdminUserCreate(BaseModel):
-    username: str
-    password: str
-    hospital: str = ""
-    phone: Optional[str] = ""
-    email: Optional[str] = ""
+app = FastAPI(title='HealthData-Valuator API', version='2.1.0', lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
+                   allow_credentials=False, allow_methods=['GET', 'POST', 'PUT', 'DELETE'],
+                   allow_headers=['Authorization', 'Content-Type'])
 
 
-class AdminUserUpdate(BaseModel):
-    hospital: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    password: Optional[str] = None
-
-# --- 4. 依赖项 ---
 def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
-# --- 5. 应用初始化 ---
-app = FastAPI(title="HealthData-Valuator API", version="2.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.exception_handler(IntegrityError)
+async def integrity_error(request, exc):
+    return JSONResponse(status_code=409, content={'detail': '数据已存在或与已有记录冲突'})
 
-# 辅助函数：生成 Token；内存存储 token -> username 供 /api/user/info 校验
-_token_store = {}
 
-def create_access_token(data: dict):
-    return secrets.token_urlsafe(32)
+@app.exception_handler(SQLAlchemyError)
+async def database_error(request, exc):
+    logging.getLogger(__name__).error('Database operation failed (%s)', type(exc).__name__)
+    return JSONResponse(status_code=503, content={'detail': '数据库暂不可用，请稍后重试'})
 
-def get_current_username(authorization: Optional[str] = Header(None)) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="未授权")
+
+def get_current_username(authorization: str | None = Header(None), db: Session = Depends(get_db)):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(401, '请先登录')
     token = authorization[7:]
-    username = _token_store.get(token)
-    if not username:
-        raise HTTPException(status_code=401, detail="登录已过期")
+    session = db.get(LoginSession, token_digest(token))
+    if not session or session.expires_at <= datetime.utcnow():
+        raise HTTPException(401, '登录已过期，请重新登录')
+    if not db.query(UserTable).filter(UserTable.username == session.username).first():
+        raise HTTPException(401, '账号已失效')
+    return session.username
+
+
+def require_admin(username: str = Depends(get_current_username)):
+    if username != 'admin':
+        raise HTTPException(403, '需要管理员权限')
     return username
 
 
-def require_admin(username: str = Depends(get_current_username)) -> str:
-    if username != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return username
+def user_info(user):
+    return dict(id=user.id, username=user.username, hospital=user.hospital or '',
+                phone=user.phone or '', email=user.email or '')
 
 
-# --- 6. 接口实现 ---
+def revoke_sessions(db, username):
+    db.query(LoginSession).filter(LoginSession.username == username).delete()
 
-@app.get("/")
-async def root():
-    return {"status": "online", "message": "MySQL 数据库连接已启用"}
 
-# 【注册】将用户信息永久存入 MySQL
-@app.post("/api/auth/register")
-async def register(user_data: UserRegister, db: Session = Depends(get_db)):
-    db_user = db.query(UserTable).filter(UserTable.username == user_data.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="用户名已存在")
-    
-    new_user = UserTable(
-        username=user_data.username,
-        password=user_data.password,
-        hospital=user_data.hospital,
-        phone=user_data.phone,
-        email=user_data.email
-    )
-    db.add(new_user)
+@app.get('/')
+def root(db: Session = Depends(get_db)):
+    db.execute(text('SELECT 1'))
+    return {'status': 'online', 'message': '数据库连接正常'}
+
+
+@app.post('/api/auth/register')
+def register(body: UserRegister, db: Session = Depends(get_db)):
+    if body.username.lower() == 'admin':
+        raise HTTPException(403, '管理员账号不能通过公开注册创建')
+    if db.query(UserTable).filter(UserTable.username == body.username).first():
+        raise HTTPException(400, '用户名已存在')
+    db.add(UserTable(**{**body.model_dump(), 'password': hash_password(body.password)}))
     db.commit()
-    return {"code": 0, "message": "注册成功，账号已安全存入数据库"}
+    return {'code': 0, 'message': '注册成功，请登录'}
 
-# 【登录】从数据库验证身份
-@app.post("/api/auth/login")
-async def login(credentials: UserLogin, db: Session = Depends(get_db)):
-    try:
-        user = db.query(UserTable).filter(UserTable.username == credentials.username).first()
-        if not user or user.password != credentials.password:
-            raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-        token = create_access_token({"sub": user.username})
-        _token_store[token] = user.username
-        return {
-            "code": 0,
-            "data": {
-                "token": token,
-                "user_info": {
-                    "username": user.username,
-                    "hospital": user.hospital or "",
-                    "phone": user.phone or "",
-                    "email": user.email or ""
-                }
-            }
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"登录失败: {str(e)}")
+@app.post('/api/auth/login')
+def login(body: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(UserTable).filter(UserTable.username == body.username).first()
+    if not user or not verify_password(body.password, user.password):
+        raise HTTPException(401, '用户名或密码错误')
+    if not user.password.startswith(PREFIX):
+        user.password = hash_password(body.password)
+    # Store only token digests; all workers share sessions and expiry in the DB.
+    db.query(LoginSession).filter(LoginSession.expires_at <= datetime.utcnow()).delete()
+    token = secrets.token_urlsafe(32)
+    db.add(LoginSession(token_hash=token_digest(token), username=user.username,
+                        expires_at=datetime.utcnow() + timedelta(hours=settings.SESSION_HOURS)))
+    db.commit()
+    return {'code': 0, 'data': {'token': token, 'user_info': user_info(user)}}
 
-@app.post("/api/auth/logout")
-async def logout(authorization: Optional[str] = Header(None)):
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]
-        _token_store.pop(token, None)
-    return {"code": 0, "message": "已退出登录"}
 
-@app.get("/api/user/info")
-async def get_user_info(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
-    user = db.query(UserTable).filter(UserTable.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    return {
-        "code": 0,
-        "data": {
-            "username": user.username,
-            "hospital": user.hospital,
-            "phone": user.phone or "",
-            "email": user.email or ""
-        }
-    }
+@app.post('/api/auth/logout')
+def logout(authorization: str | None = Header(None), db: Session = Depends(get_db)):
+    if authorization and authorization.startswith('Bearer '):
+        db.query(LoginSession).filter(LoginSession.token_hash == token_digest(authorization[7:])).delete()
+        db.commit()
+    return {'code': 0, 'message': '已退出登录'}
 
-# 9大类成本名称，用于结果页
+
+@app.get('/api/user/info')
+def get_user_info(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    return {'code': 0, 'data': user_info(db.query(UserTable).filter(UserTable.username == username).one())}
+
+
+@app.put('/api/user/info')
+def update_user_info(body: UserProfileUpdate, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    user = db.query(UserTable).filter(UserTable.username == username).one()
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(user, key, value)
+    db.commit()
+    return {'code': 0, 'data': user_info(user)}
+
+
 INDICATOR_CATEGORY_NAMES = {
-    1: "数据战略与治理成本", 2: "数据获取与采集成本", 3: "数据存储与备份成本",
-    4: "数据处理与加工成本", 5: "数据应用与分析成本", 6: "数据流通与共享成本",
-    7: "数据安全、隐私与合规成本", 8: "数据归档与销毁成本", 9: "数据全流程人力成本"
+    1: '数据战略与治理成本', 2: '数据获取与采集成本', 3: '数据存储与备份成本',
+    4: '数据处理与加工成本', 5: '数据应用与分析成本', 6: '数据流通与共享成本',
+    7: '数据安全、隐私与合规成本', 8: '数据归档与销毁成本', 9: '数据全流程人力成本'
 }
 
-@app.get("/api/indicators")
-async def get_indicators():
-    """返回指标分类与项（供前端表单项使用）"""
-    categories = [
-        {"id": i, "name": INDICATOR_CATEGORY_NAMES[i]} for i in range(1, 10)
-    ]
-    return {"code": 0, "data": {"categories": categories}}
 
-@app.post("/api/evaluations")
-async def create_evaluation(data: dict, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
-    try:
-        raw_indicators = data.get("indicators", [])
-        total_val = 0.0
-        for item in raw_indicators:
-            total_val += float(item.get("amount", 0))
-        name = data.get("name") or data.get("evaluation_name") or "未命名评估"
-        new_eval = EvaluationTable(
-            name=name,
-            description=data.get("description", ""),
-            total_value=total_val,
-            indicators=json.dumps(raw_indicators, ensure_ascii=False),
-            created_at=datetime.now().isoformat(),
-            username=username
-        )
-        db.add(new_eval)
-        db.commit()
-        db.refresh(new_eval)
-        return {"code": 0, "data": {"id": new_eval.id, "total_value": total_val}}
-    except Exception as e:
-        err_msg = str(e)
-        if "username" in err_msg.lower() and ("unknown column" in err_msg.lower() or "no such column" in err_msg.lower()):
-            raise HTTPException(
-                status_code=500,
-                detail="数据库缺少 username 列，请在 MySQL 中执行：ALTER TABLE evaluations ADD COLUMN username VARCHAR(50) NULL DEFAULT NULL;"
-            )
-        raise HTTPException(status_code=500, detail=err_msg)
+@app.get('/api/indicators')
+def indicators():
+    return {'code': 0, 'data': {'categories': [dict(id=i, name=n) for i, n in INDICATOR_CATEGORY_NAMES.items()]}}
 
-@app.get("/api/evaluations/stats")
-async def get_evaluation_stats(db: Session = Depends(get_db)):
-    total_val = db.query(func.sum(EvaluationTable.total_value)).scalar() or 0
-    total_count = db.query(func.count(EvaluationTable.id)).scalar() or 0
-    avg_val = total_val / total_count if total_count else 0
-    return {"code": 0, "data": {"total_count": total_count, "total_value": round(float(total_val), 2), "average_value": round(float(avg_val), 2)}}
 
-@app.get("/api/evaluations")
-async def list_evaluations(
-    page: int = 1, pageSize: int = 10, status: Optional[str] = None,
-    keyword: Optional[str] = None, db: Session = Depends(get_db), username: str = Depends(get_current_username)
-):
-    try:
-        q = db.query(EvaluationTable)
-        if username != "admin":
-            q = q.filter(EvaluationTable.username == username)
-        if keyword:
-            q = q.filter(EvaluationTable.name.contains(keyword))
-        if status and status != "all":
-            q = q.filter(EvaluationTable.status == status)
-        total = q.count()
-        items = q.order_by(EvaluationTable.created_at.desc()).offset((page - 1) * pageSize).limit(pageSize).all()
-        return {
-            "code": 0,
-            "data": {
-                "list": [
-                    {"id": e.id, "name": e.name, "description": e.description, "totalValue": e.total_value,
-                     "createdAt": e.created_at, "status": e.status or "completed"}
-                    for e in items
-                ],
-                "total": total
-            }
-        }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"获取评估列表失败: {str(e)}")
+@app.post('/api/evaluations')
+def create_evaluation(body: EvaluationCreate, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    payload, total = serialize_indicators(body.indicators)
+    record = EvaluationTable(name=body.name, description=body.description, indicators=payload,
+                             total_value=total, username=username, status='completed',
+                             created_at=datetime.now().isoformat())
+    db.add(record)
+    db.commit()
+    return {'code': 0, 'data': {'id': record.id, 'total_value': record.total_value}}
 
-@app.get("/api/evaluations/{eval_id}")
-async def get_evaluation(eval_id: int, db: Session = Depends(get_db)):
-    e = db.query(EvaluationTable).filter(EvaluationTable.id == eval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="评估不存在")
-    return {"code": 0, "data": {"id": e.id, "name": e.name, "description": e.description, "totalValue": e.total_value, "createdAt": e.created_at, "status": e.status, "indicators": json.loads(e.indicators) if isinstance(e.indicators, str) else (e.indicators or [])}}
 
-def _build_result_from_eval(e):
-    raw = json.loads(e.indicators) if isinstance(e.indicators, str) else (e.indicators or [])
-    total_val = float(e.total_value)
-    by_cat = {}
+@app.get('/api/evaluations/stats')
+def evaluation_stats(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    q = db.query(EvaluationTable).filter(EvaluationTable.username == username)
+    total = q.with_entities(func.sum(EvaluationTable.total_value)).scalar() or 0
+    count = q.count()
+    return {'code': 0, 'data': dict(total_count=count, total_value=round(total, 2),
+                                   average_value=round(total / count, 2) if count else 0)}
+
+
+@app.get('/api/evaluations')
+def list_evaluations(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=100),
+                     status: str | None = None, keyword: str | None = None,
+                     scope: str = Query('mine', pattern='^(mine|all)$'),
+                     db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    q = db.query(EvaluationTable)
+    if scope == 'all':
+        if username != 'admin':
+            raise HTTPException(403, '需要管理员权限')
+    else:
+        q = q.filter(EvaluationTable.username == username)
+    if keyword:
+        q = q.filter(EvaluationTable.name.contains(keyword, autoescape=True))
+    if status and status != 'all':
+        q = q.filter(EvaluationTable.status == status)
+    count = q.count()
+    records = q.order_by(EvaluationTable.id.desc()).offset((page - 1) * pageSize).limit(pageSize).all()
+    return {'code': 0, 'data': {'total': count, 'list': [dict(id=e.id, name=e.name,
+            description=e.description, totalValue=e.total_value, createdAt=e.created_at, status=e.status)
+            for e in records]}}
+
+
+@app.get('/api/evaluations/{eval_id}')
+def get_evaluation(eval_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    e = owned_evaluation(db, eval_id, username)
+    return {'code': 0, 'data': dict(id=e.id, name=e.name, description=e.description,
+            totalValue=e.total_value, createdAt=e.created_at, status=e.status, indicators=json.loads(e.indicators or '[]'))}
+
+
+def _build_result_from_eval(e, hospital=''):
+    raw = json.loads(e.indicators or '[]')
+    total = float(e.total_value or 0)
     details = []
     for item in raw:
-        cat_id = item.get("category", 1)
-        cat_name = INDICATOR_CATEGORY_NAMES.get(cat_id, "其他")
-        amt = float(item.get("amount", 0))
-        by_cat[cat_id] = by_cat.get(cat_id, 0) + amt
-        details.append({
-            "categoryId": cat_id,
-            "categoryName": cat_name,
-            "itemName": item.get("item_name", ""),
-            "amount": amt,
-            "percentage": round((amt / total_val * 100), 2) if total_val else 0,
-            "description": ""
-        })
-    categories = [{"id": k, "name": INDICATOR_CATEGORY_NAMES.get(k, "其他"), "value": v} for k, v in sorted(by_cat.items())]
-    return {
-        "reportId": f"REPORT-{e.id}-{int(datetime.now().timestamp())}",
-        "hospital": "",
-        "createdAt": e.created_at,
-        "name": e.name,
-        "status": e.status or "completed",
-        "totalValue": total_val,
-        "categories": categories,
-        "details": details
-    }
+        cat = int(item.get('category', 1))
+        amount = float(item.get('amount', 0))
+        details.append(dict(categoryId=cat, categoryName=INDICATOR_CATEGORY_NAMES.get(cat, '其他'),
+                            itemName=INDICATOR_LABELS.get(item.get('item_name'), item.get('item_name', '')),
+                            amount=amount, percentage=round(amount / total * 100, 2) if total else 0,
+                            description=''))
+    categories = []
+    for cat in sorted(set(d['categoryId'] for d in details)):
+        rows = [d for d in details if d['categoryId'] == cat]
+        categories.append(dict(id=cat, name=INDICATOR_CATEGORY_NAMES.get(cat, '其他'),
+                               value=round(sum(d['amount'] for d in rows), 2), details=rows))
+    return dict(id=e.id, reportId=f'REPORT-{e.id}', hospital=hospital, createdAt=e.created_at,
+                name=e.name, status=e.status or 'completed', totalValue=total,
+                categories=categories, details=details)
 
-@app.get("/api/evaluations/{eval_id}/result")
-async def get_evaluation_result(eval_id: int, db: Session = Depends(get_db)):
-    e = db.query(EvaluationTable).filter(EvaluationTable.id == eval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="评估不存在")
-    result = _build_result_from_eval(e)
-    return {"code": 0, "data": result}
 
-@app.put("/api/evaluations/{eval_id}")
-async def update_evaluation(eval_id: int, data: dict, db: Session = Depends(get_db)):
-    e = db.query(EvaluationTable).filter(EvaluationTable.id == eval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="评估不存在")
-    raw_indicators = data.get("indicators")
-    if raw_indicators is None:
-        raw_indicators = json.loads(e.indicators) if isinstance(e.indicators, str) else (e.indicators or [])
-    total_val = sum(float(i.get("amount", 0)) for i in raw_indicators)
-    e.name = data.get("name", e.name)
-    e.description = data.get("description", e.description)
-    e.total_value = total_val
-    e.indicators = json.dumps(raw_indicators, ensure_ascii=False)
+@app.get('/api/evaluations/{eval_id}/result')
+def get_result(eval_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    e = owned_evaluation(db, eval_id, username)
+    owner = db.query(UserTable).filter(UserTable.username == e.username).first()
+    return {'code': 0, 'data': _build_result_from_eval(e, owner.hospital if owner else '')}
+
+
+@app.put('/api/evaluations/{eval_id}')
+def update_evaluation(eval_id: int, body: EvaluationUpdate, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    e = owned_evaluation(db, eval_id, username)
+    if body.indicators is not None:
+        e.indicators, e.total_value = serialize_indicators(body.indicators)
+    if body.name is not None:
+        e.name = body.name
+    if body.description is not None:
+        e.description = body.description
     db.commit()
-    db.refresh(e)
-    return {"code": 0, "data": {"id": e.id, "total_value": e.total_value}}
+    return {'code': 0, 'data': dict(id=e.id, total_value=e.total_value)}
 
-@app.delete("/api/evaluations/{eval_id}")
-async def delete_evaluation(eval_id: int, db: Session = Depends(get_db)):
-    e = db.query(EvaluationTable).filter(EvaluationTable.id == eval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="评估不存在")
-    db.delete(e)
+
+@app.delete('/api/evaluations/{eval_id}')
+def delete_evaluation(eval_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    db.delete(owned_evaluation(db, eval_id, username))
     db.commit()
-    return {"code": 0, "message": "删除成功"}
+    return {'code': 0, 'message': '删除成功'}
 
-@app.post("/api/evaluations/{eval_id}/submit")
-async def submit_evaluation(eval_id: int, db: Session = Depends(get_db)):
-    e = db.query(EvaluationTable).filter(EvaluationTable.id == eval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="评估不存在")
-    e.status = "completed"
+
+@app.post('/api/evaluations/{eval_id}/submit')
+def submit_evaluation(eval_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    e = owned_evaluation(db, eval_id, username)
+    e.status = 'completed'
     db.commit()
-    return {"code": 0, "data": {"id": e.id}}
+    return {'code': 0, 'data': {'id': e.id}}
 
-@app.post("/api/evaluations/{eval_id}/duplicate")
-async def duplicate_evaluation(eval_id: int, db: Session = Depends(get_db)):
-    e = db.query(EvaluationTable).filter(EvaluationTable.id == eval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="评估不存在")
-    raw = json.loads(e.indicators) if isinstance(e.indicators, str) else (e.indicators or [])
-    new_eval = EvaluationTable(
-        name=e.name + " (副本)",
-        description=e.description,
-        total_value=e.total_value,
-        indicators=e.indicators,
-        created_at=datetime.now().isoformat(),
-        status="completed"
-    )
-    db.add(new_eval)
+
+@app.post('/api/evaluations/{eval_id}/duplicate')
+def duplicate_evaluation(eval_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    e = owned_evaluation(db, eval_id, username)
+    copy = EvaluationTable(name=e.name[:195] + ' (副本)', description=e.description,
+                           total_value=e.total_value, indicators=e.indicators, username=username,
+                           created_at=datetime.now().isoformat(), status=e.status)
+    db.add(copy)
     db.commit()
-    db.refresh(new_eval)
-    return {"code": 0, "data": {"id": new_eval.id}}
+    return {'code': 0, 'data': {'id': copy.id}}
 
-# --- 阶段四：管理员看板接口 ---
-@app.get("/api/admin/users")
-async def list_users(
-    page: int = 1, pageSize: int = 20, keyword: Optional[str] = None,
-    db: Session = Depends(get_db), _: str = Depends(require_admin)
-):
+
+@app.get('/api/admin/users')
+def list_users(page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le=100), keyword: str | None = None,
+               db: Session = Depends(get_db), _: str = Depends(require_admin)):
     q = db.query(UserTable)
     if keyword:
-        q = q.filter(UserTable.username.contains(keyword) | UserTable.hospital.contains(keyword))
-    total = q.count()
-    items = q.order_by(UserTable.id.desc()).offset((page - 1) * pageSize).limit(pageSize).all()
-    return {
-        "code": 0,
-        "data": {
-            "list": [{"id": u.id, "username": u.username, "hospital": u.hospital or "", "phone": u.phone or "", "email": u.email or ""} for u in items],
-            "total": total
-        }
-    }
+        q = q.filter(UserTable.username.contains(keyword, autoescape=True) | UserTable.hospital.contains(keyword, autoescape=True))
+    count = q.count()
+    return {'code': 0, 'data': {'total': count, 'list': [user_info(u) for u in
+            q.order_by(UserTable.id.desc()).offset((page - 1) * pageSize).limit(pageSize).all()]}}
 
 
-@app.post("/api/admin/users")
-async def admin_create_user(body: AdminUserCreate, db: Session = Depends(get_db), _: str = Depends(require_admin)):
+@app.post('/api/admin/users')
+def create_user(body: AdminUserCreate, db: Session = Depends(get_db), _: str = Depends(require_admin)):
     if db.query(UserTable).filter(UserTable.username == body.username).first():
-        raise HTTPException(status_code=400, detail="用户名已存在")
-    u = UserTable(
-        username=body.username.strip(),
-        password=body.password,
-        hospital=body.hospital or "",
-        phone=body.phone or "",
-        email=body.email or ""
-    )
+        raise HTTPException(400, '用户名已存在')
+    u = UserTable(**{**body.model_dump(), 'password': hash_password(body.password)})
     db.add(u)
     db.commit()
-    db.refresh(u)
-    return {"code": 0, "data": {"id": u.id, "username": u.username, "hospital": u.hospital or "", "phone": u.phone or "", "email": u.email or ""}}
+    return {'code': 0, 'data': user_info(u)}
 
 
-@app.get("/api/admin/users/{user_id}")
-async def admin_get_user(user_id: int, db: Session = Depends(get_db), _: str = Depends(require_admin)):
-    u = db.query(UserTable).filter(UserTable.id == user_id).first()
+def find_user(db, user_id):
+    u = db.get(UserTable, user_id)
     if not u:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    return {"code": 0, "data": {"id": u.id, "username": u.username, "hospital": u.hospital or "", "phone": u.phone or "", "email": u.email or ""}}
+        raise HTTPException(404, '用户不存在')
+    return u
 
 
-@app.put("/api/admin/users/{user_id}")
-async def admin_update_user(user_id: int, body: AdminUserUpdate, db: Session = Depends(get_db), _: str = Depends(require_admin)):
-    u = db.query(UserTable).filter(UserTable.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    if body.hospital is not None:
-        u.hospital = body.hospital
-    if body.phone is not None:
-        u.phone = body.phone
-    if body.email is not None:
-        u.email = body.email
-    if body.password is not None and body.password.strip() != "":
-        u.password = body.password
+@app.get('/api/admin/users/{user_id}')
+def get_user(user_id: int, db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    return {'code': 0, 'data': user_info(find_user(db, user_id))}
+
+
+@app.put('/api/admin/users/{user_id}')
+def update_user(user_id: int, body: AdminUserUpdate, db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    u = find_user(db, user_id)
+    for key, value in body.model_dump(exclude_none=True).items():
+        if key == 'password':
+            value = hash_password(value)
+            revoke_sessions(db, u.username)
+        setattr(u, key, value)
     db.commit()
-    db.refresh(u)
-    return {"code": 0, "data": {"id": u.id, "username": u.username, "hospital": u.hospital or "", "phone": u.phone or "", "email": u.email or ""}}
+    return {'code': 0, 'data': user_info(u)}
 
 
-@app.delete("/api/admin/users/{user_id}")
-async def admin_delete_user(user_id: int, db: Session = Depends(get_db), _: str = Depends(require_admin)):
-    u = db.query(UserTable).filter(UserTable.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    if u.username == "admin":
-        raise HTTPException(status_code=400, detail="不能删除管理员账号")
+@app.delete('/api/admin/users/{user_id}')
+def delete_user(user_id: int, db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    u = find_user(db, user_id)
+    if u.username == 'admin':
+        raise HTTPException(400, '不能删除管理员账号')
+    if db.query(EvaluationTable).filter(EvaluationTable.username == u.username).first():
+        raise HTTPException(409, '该用户仍有评估记录，请先处理评估记录再删除账号')
+    revoke_sessions(db, u.username)
     db.delete(u)
     db.commit()
-    return {"code": 0, "message": "已删除"}
+    return {'code': 0, 'message': '已删除'}
 
-@app.get("/api/admin/stats")
-async def get_admin_stats(db: Session = Depends(get_db)):
-    # 从数据库实时计算汇总
-    total_val = db.query(func.sum(EvaluationTable.total_value)).scalar() or 0
-    total_count = db.query(func.count(EvaluationTable.id)).scalar() or 0
-    avg_val = total_val / total_count if total_count > 0 else 0
-    user_count = db.query(func.count(UserTable.id)).scalar() or 0
 
-    return {
-        "code": 0,
-        "data": {
-            "total_evaluations": total_count,
-            "total_market_value": round(total_val, 2),
-            "total_value": round(total_val, 2),
-            "average_value": round(avg_val, 2),
-            "total_users": user_count
-        }
-    }
+@app.get('/api/admin/stats')
+def admin_stats(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    count = db.query(EvaluationTable).count()
+    total = db.query(func.sum(EvaluationTable.total_value)).scalar() or 0
+    return {'code': 0, 'data': dict(total_evaluations=count, total_market_value=round(total, 2),
+            total_value=round(total, 2), average_value=round(total / count, 2) if count else 0,
+            total_users=db.query(UserTable).count())}
 
-_default_weights = {str(i): 1.0 for i in range(1, 10)}
 
-@app.get("/api/admin/weights")
-async def get_weights():
-    return {"code": 0, "data": _default_weights}
+def read_weights(db):
+    values = {str(i): 1.0 for i in range(1, 10)}
+    values.update({str(w.category): w.value for w in db.query(WeightSetting).all()})
+    return values
 
-@app.put("/api/admin/weights")
-async def update_weights(weights: dict):
-    for k, v in (weights or {}).items():
-        if str(k) in _default_weights:
-            _default_weights[str(k)] = float(v)
-    return {"code": 0, "message": "权重已更新", "data": _default_weights}
 
-@app.post("/api/demo/init")
-async def init_demo_data(db: Session = Depends(get_db)):
-    """初始化演示数据：创建测试用户与示例评估（若已存在则跳过）"""
-    demo_users = [
-        ("admin", "admin123", "系统演示医院", "13800000001", "admin@demo.com"),
-        ("doctor_zhang", "password123", "北京协和医院", "13800000002", "zhang@demo.com"),
-        ("nurse_li", "password123", "上海瑞金医院", "13800000003", "li@demo.com"),
-    ]
-    for username, password, hospital, phone, email in demo_users:
-        if db.query(UserTable).filter(UserTable.username == username).first():
-            continue
-        db.add(UserTable(username=username, password=password, hospital=hospital, phone=phone, email=email))
+@app.get('/api/admin/weights')
+def get_weights(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    return {'code': 0, 'data': read_weights(db)}
+
+
+@app.put('/api/admin/weights')
+def update_weights(weights: dict, db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    for key, value in weights.items():
+        if key not in {str(i) for i in range(1, 10)} or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 3:
+            raise HTTPException(422, '权重类别必须为1至9，数值必须在0至3之间')
+    for key, value in weights.items():
+        record = db.get(WeightSetting, int(key))
+        if record:
+            record.value = value
+        else:
+            db.add(WeightSetting(category=int(key), value=value))
     db.commit()
-    demo_evals = [
-        ("2023年度数据资产评估", 1250000, [{"category": 1, "item_name": "plan", "amount": 1250000}]),
-        ("急诊科数据专项评估", 850000, [{"category": 2, "item_name": "collect", "amount": 850000}]),
-        ("医疗影像数据评估", 2100000, [{"category": 3, "item_name": "storage", "amount": 2100000}]),
-    ]
-    for name, total, ind in demo_evals:
-        db.add(EvaluationTable(
-            name=name, description="演示数据", total_value=total,
-            indicators=json.dumps(ind, ensure_ascii=False),
-            created_at=datetime.now().isoformat()
-        ))
-    db.commit()
-    return {"code": 0, "message": "演示数据初始化成功"}
+    return {'code': 0, 'message': '参考权重已保存；当前报告仍采用直接相加法', 'data': read_weights(db)}
 
-@app.put("/api/user/info")
-async def update_user_info(data: dict, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
-    user = db.query(UserTable).filter(UserTable.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    if "hospital" in data:
-        user.hospital = data["hospital"]
-    if "phone" in data:
-        user.phone = data["phone"]
-    if "email" in data:
-        user.email = data["email"]
-    db.commit()
-    db.refresh(user)
-    return {"code": 0, "data": {"username": user.username, "hospital": user.hospital, "phone": user.phone or "", "email": user.email or ""}}
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.post('/api/demo/init')
+def init_demo(db: Session = Depends(get_db), username: str = Depends(require_admin)):
+    if not settings.ENABLE_DEMO:
+        raise HTTPException(403, '演示初始化未启用')
+    name = '系统演示评估'
+    if not db.query(EvaluationTable).filter_by(name=name, username=username, description='演示数据').first():
+        db.add(EvaluationTable(name=name, username=username, description='演示数据', total_value=100,
+                               indicators='[{"category":1,"item_name":"strategicPlanning","amount":100}]',
+                               created_at=datetime.now().isoformat(), status='completed'))
+        db.commit()
+    return {'code': 0, 'message': '演示评估已就绪（不会创建默认密码账号）'}
+
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host='127.0.0.1', port=8000)

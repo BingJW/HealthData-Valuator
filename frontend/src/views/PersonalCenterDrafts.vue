@@ -23,6 +23,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useUserStore } from '@/store/user'
+const userStore = useUserStore()
+const draftKey = () => `evaluationDraft:${userStore.userInfo.username}`
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const draft = ref(null)
@@ -37,9 +40,10 @@ const formatDate = (v) => {
   }
 }
 
-const loadDraft = () => {
+const loadDraft = async () => {
   try {
-    const raw = localStorage.getItem('evaluationDraft')
+    if (!userStore.userInfo.username) await userStore.getUserInfo()
+    const raw = localStorage.getItem(draftKey())
     if (raw) {
       const data = JSON.parse(raw)
       draft.value = data
@@ -58,7 +62,7 @@ const handleDelete = async () => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    localStorage.removeItem('evaluationDraft')
+    localStorage.removeItem(draftKey())
     draft.value = null
     ElMessage.success('草稿已删除')
   } catch {

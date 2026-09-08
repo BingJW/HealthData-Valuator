@@ -6,7 +6,7 @@
         <div class="header-content">
           <div>
             <h2>权重设置</h2>
-            <p>调整9大类成本指标的权重系数，影响总估值计算</p>
+            <p>保存9大类参考权重并预览分布；当前评估仍按原始成本直接相加</p>
           </div>
           <el-button type="primary" plain @click="$router.push('/admin/dashboard')">返回概览</el-button>
         </div>
@@ -18,10 +18,10 @@
         :closable="false"
         class="mb-4"
       >
-        <p>• 权重系数会影响总估值的计算结果（总估值 = Σ(金额 × 权重)）</p>
+        <p>• 当前总估值 = Σ(各项成本金额)，参考权重暂不参与报告计算</p>
         <p>• 默认权重为1.0，表示对原始金额不做调整</p>
-        <p>• 权重大于1.0会增加该类别的价值贡献</p>
-        <p>• 权重小于1.0会减少该类别的价值贡献</p>
+        <p>• 权重大于1.0表示参考分析中更高的相对权重</p>
+        <p>• 保存参考权重不会修改历史报告金额</p>
       </el-alert>
     </el-card>
     
@@ -49,6 +49,7 @@
             </div>
           </template>
           
+          <p class="table-scroll-hint">左右滑动表格可调整权重、查看影响系数</p>
           <el-table 
             :data="weightsList" 
             stripe
@@ -75,12 +76,12 @@
               </template>
             </el-table-column>
             
-            <el-table-column label="权重调整">
+            <el-table-column label="权重调整" min-width="240">
               <template #default="{ row }">
                 <div class="weight-control">
                   <el-slider
                     v-model="row.weight"
-                    :min="0.1"
+                    :min="0"
                     :max="3"
                     :step="0.1"
                     :show-input="true"
@@ -118,7 +119,7 @@
               <BaseChart
                 ref="previewChartRef"
                 :options="previewOptions"
-                height="300px"
+                :height="isMobile ? '440px' : '300px'"
               />
             </div>
             
@@ -246,7 +247,7 @@ const calculateImpact = (weight) => {
 }
 
 // 处理权重变化
-const handleWeightChange = (row) => {
+const handleWeightChange = () => {
   // 更新预览图表
   if (previewChartRef.value && previewChartRef.value.getInstance()) {
     previewChartRef.value.getInstance().setOption(previewOptions.value, true)
@@ -261,10 +262,8 @@ const resetToDefault = () => {
       item.weight = 1.0
     })
     
-    // 备份当前权重
-    backupCurrentWeights()
     
-    ElMessage.success('已重置为默认权重')
+    ElMessage.success('已恢复默认值，请点击保存更改')
   } finally {
     loading.reset = false
   }
@@ -319,14 +318,19 @@ const previewOptions = computed(() => {
       bottom: '3%',
       containLabel: true
     },
-    xAxis: {
+    xAxis: isMobile.value ? { type: 'value', min: 0, max: 3 } : {
       type: 'category',
       data: weightsList.map(item => item.name),
       axisLabel: {
         rotate: 45
       }
     },
-    yAxis: {
+    yAxis: isMobile.value ? {
+      type: 'category',
+      inverse: true,
+      data: weightsList.map(item => item.name),
+      axisLabel: { fontSize: 11, formatter: name => name.match(/.{1,7}/g).join('\n') }
+    } : {
       type: 'value',
       min: 0,
       max: 3,
@@ -364,7 +368,7 @@ const previewOptions = computed(() => {
           },
           data: [
             {
-              yAxis: 1,
+              ...(isMobile.value ? { xAxis: 1 } : { yAxis: 1 }),
               name: '默认权重'
             }
           ],
@@ -386,7 +390,7 @@ onMounted(async () => {
     
     // 初始化权重列表
     categories.forEach(category => {
-      const weight = adminStore.weights[category.id] || 1.0
+      const weight = adminStore.weights[category.id] ?? 1.0
       weightsList.push({
         id: category.id,
         name: category.name,
@@ -397,12 +401,12 @@ onMounted(async () => {
     // 备份初始权重
     backupCurrentWeights()
   } catch (error) {
-    console.error('初始化权重设置失败:', error)
+    ElMessage.error(error.response?.data?.detail || '参考权重加载失败，请刷新重试')
   }
 })
 
 // 监听窗口大小变化
-const { width } = useResponsive()
+const { width, isMobile } = useResponsive()
 watch(width, () => {
   if (previewChartRef.value && previewChartRef.value.getInstance()) {
     previewChartRef.value.getInstance().resize()
@@ -569,4 +573,16 @@ watch(width, () => {
     flex: 1;
   }
 }
+
+@media (max-width: 768px) {
+  .header-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .header-actions > .el-input, .header-actions > .el-select { width: 100% !important; }
+  .header-actions .el-button { margin-left: 0; }
+  .pagination-wrap { justify-content: center; }
+  .card-header { flex-wrap: wrap; gap: 12px; }
+  .weight-setting-container { padding: 0; }
+  .chart-container { height: 440px; }
+  .preview-card { margin-top: 16px; }
+}
+
 </style>

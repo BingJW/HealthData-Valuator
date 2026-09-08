@@ -5,6 +5,7 @@
 from app.core.database import SessionLocal
 from app.models import models
 from sqlalchemy import func
+import json
 
 def example_queries():
     """示例查询"""
@@ -29,18 +30,14 @@ def example_queries():
         print("\n=== 示例 3: 查询所有评估记录 ===")
         evaluations = db.query(models.Evaluation).all()
         for eval in evaluations:
-            print(f"评估: {eval.evaluation_name}, 价值: {eval.total_value}")
+            print(f"评估: {eval.name}, 价值: {eval.total_value}")
         
         # 示例 4: 查询特定评估的指标明细
         print("\n=== 示例 4: 查询评估的指标明细 ===")
         if evaluations:
-            eval_id = evaluations[0].id
-            indicators = db.query(models.IndicatorData).filter(
-                models.IndicatorData.evaluation_id == eval_id
-            ).all()
-            for ind in indicators:
-                print(f"类别 {ind.category}: {ind.item_name} = {ind.amount}")
-        
+            for ind in json.loads(evaluations[0].indicators or '[]'):
+                print(f"类别 {ind['category']}: {ind['item_name']} = {ind['amount']}")
+
         # 示例 5: 统计查询
         print("\n=== 示例 5: 统计信息 ===")
         total_users = db.query(func.count(models.User.id)).scalar()

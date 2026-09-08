@@ -17,6 +17,6 @@ export const getWeightsAPI = () => request.get('/admin/weights')
 export const updateWeightsAPI = (weights) => request.put('/admin/weights', weights)
 
 export const getRecentEvaluationsAPI = (params = {}) =>
-  request.get('/evaluations', { params: { page: 1, pageSize: 10, ...params } })
+  request.get('/evaluations', { params: { page: 1, pageSize: 10, ...params, scope: 'all' } })
 
 export const getDashboardDataAPI = () => request.get('/admin/stats')

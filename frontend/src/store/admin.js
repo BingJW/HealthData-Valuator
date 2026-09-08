@@ -3,7 +3,6 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { 
   getSystemStatsAPI, 
-  getRecentEvaluationsAPI,
   getWeightsAPI,
   updateWeightsAPI,
   getDashboardDataAPI

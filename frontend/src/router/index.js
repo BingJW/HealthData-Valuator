@@ -15,8 +15,7 @@ const routes = [
     name: 'Home',
     component: Home,
     meta: { 
-      title: '医疗数据资产价值计量器 - 首页',
-      requiresGuest: true 
+      title: '医疗数据资产价值计量器 - 首页'
     }
   },
   {
@@ -123,7 +122,7 @@ router.beforeEach((to, from, next) => {
 
   // 需要登录但未登录
   if (to.meta.requiresAuth && !isAuthenticated) {
-    next('/login')
+    next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
 

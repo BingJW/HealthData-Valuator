@@ -11,7 +11,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import BaseChart from './BaseChart.vue'
 
 const props = defineProps({
@@ -144,13 +144,6 @@ const options = computed(() => {
       }
     ],
     color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
-  }
-})
-
-// 监听数据变化
-watch(() => props.data, () => {
-  if (chartRef.value && chartRef.value.getInstance()) {
-    chartRef.value.getInstance().setOption(options.value, true)
   }
 })
 

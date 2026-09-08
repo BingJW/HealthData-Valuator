@@ -69,6 +69,8 @@ export const useUserStore = defineStore('user', () => {
     try {
       const res = await getUserInfoAPI()
       userInfo.value = res.data || {}
+      if (userInfo.value.username === 'admin') localStorage.setItem('isAdmin', 'true')
+      else localStorage.removeItem('isAdmin')
       return res
     } catch (error) {
       console.error('获取用户信息失败:', error)

@@ -8,7 +8,7 @@
         <el-descriptions-item label="手机">{{ userStore.userInfo?.phone || '—' }}</el-descriptions-item>
         <el-descriptions-item label="邮箱">{{ userStore.userInfo?.email || '—' }}</el-descriptions-item>
       </el-descriptions>
-      <p class="tip">如需修改资料，请联系管理员或在后端扩展「更新用户信息」功能。</p>
+      <p class="tip">如需修改资料，请联系管理员。</p>
     </el-card>
   </div>
 </template>
