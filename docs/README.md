@@ -14,6 +14,7 @@
 ## 部署
 
 - [阿里云宝塔服务器更新方式](deployment/server-update.md)
+- [2026年9月8日实际发布记录](deployment/release-2026-09-08.md)
 
 ## 原文档迁移对照
 

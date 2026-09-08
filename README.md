@@ -26,4 +26,4 @@ npm run dev
 - API 文档：http://127.0.0.1:8000/docs
 - 操作指引：http://127.0.0.1:3000/documents/user-guide.pdf
 
-2026年9月8日更新在本地完成，尚未推送或部署到服务器。后续发布前请阅读更新说明中的数据库兼容、密码升级和备份回退事项。
+2026年9月8日更新已推送 GitHub 并部署到服务器。网站：http://47.93.192.190/ 。后续更新见[服务器更新方式](docs/deployment/server-update.md)，本次备份、版本与验证结果见[实际发布记录](docs/deployment/release-2026-09-08.md)。
